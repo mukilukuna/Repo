@@ -8,7 +8,7 @@ if (-not (Get-Module -ListAvailable -Name ExchangeOnlineManagement)) {
 Import-Module ExchangeOnlineManagement
 
 # Maak verbinding met Exchange Online
-Connect-ExchangeOnline -Device
+Connect-ExchangeOnline
 
 # Ophalen van mailboxgegevens
 $mailboxes = Get-Mailbox -ResultSize Unlimited
@@ -27,7 +27,7 @@ $mailboxDetails = foreach ($mailbox in $mailboxes) {
 }
 
 # Resultaten naar CSV exporteren
-$path = "C:\Users\MukiLukunaITSynergy\IT Synergy\Aurora Group B.V. - Professional Services\Project - Online Werkplek\1. Inventarisatie Fase\eind 2025\mailboxDetails.csv"
+$path = "C:\Temp\Xtra\mailboxDetails.csv"
 $mailboxDetails | Export-Csv -Path $path -NoTypeInformation -Encoding UTF8
 
 # Verbinding met Exchange Online verbreken

@@ -45,4 +45,4 @@ foreach ($user in $users) {
 }
 
 # Exporteer de resultaten naar een CSV-bestand
-$result | Export-Csv -Path "C:\temp\AzureAD_Gebruikers_$datum.csv" -NoTypeInformation -Encoding UTF8
+$result | Export-Csv -Path "C:\temp\xtra\AzureAD_Gebruikers_$datum.csv" -NoTypeInformation -Encoding UTF8
