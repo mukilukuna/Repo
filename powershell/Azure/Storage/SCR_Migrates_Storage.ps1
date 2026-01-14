@@ -1,7 +1,9 @@
-    # =====================================================================
-    # Robocopy Script - Mirror Source to Destination with Logging
-    # =====================================================================
-    # Configuratie
+    <#
+    =====================================================================
+    Robocopy Script - Mirror Source to Destination with Logging
+    =====================================================================
+    https://learn.microsoft.com/en-us/azure/storage/files/storage-files-migration-robocopy
+    #>
     $Source      = "<Bron Locatie>"
     $Destination = "<Doel Locatie>"
     $LogPath     = "C:\Temp\Robocopy_Test_Mirror.log"
