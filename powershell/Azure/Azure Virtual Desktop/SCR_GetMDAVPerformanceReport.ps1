@@ -7,7 +7,7 @@ Zorg ervoor dat het volgende is ingesteld:
 3. De map C:\temp moet schrijfbaar zijn.
 4. Tijdens de recording moet je het performanceprobleem reproduceren.
 
-Gemaakt door: Muki Lukuna samen met ChatGPT
+Gemaakt door: ChatGPT
 #>
 
 # Variabelen
