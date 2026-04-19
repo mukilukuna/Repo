@@ -46,7 +46,7 @@ else {
 
 # Variabelen definiëren met gebruikersinput
 $Customer = Read-Host -Prompt "Enter the customer name"  # Vraagt om de klantnaam
-$Octet = Read-Host -Prompt "Enter the second octet for the VNet IP address (1-255, e.g., 200 for 10.200.0.0/16)"  # Vraagt om het tweede octet
+$Octet = Read-Host -Prompt "Enter the second octet for the VNet IP address (1-255, e.g., 200 for 10.0.0.1/16)"  # Vraagt om het tweede octet
 if ($Octet -lt 1 -or $Octet -gt 255) {
     Write-Host "Invalid second octet. Please provide a value between 1 and 255."
     exit

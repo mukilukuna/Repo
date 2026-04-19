@@ -7,28 +7,28 @@
   include the Shared Mailboxes. 
 
 .EXAMPLE
-  Get-MailboxSizeReport.ps1 -adminUPN johndoe@contoso.com
+  Get-MailboxSizeReport.ps1 -adminUPN user50@example.com
 
   Generate the mailbox size report with Shared mailboxes, mailbox archive and store 
   the csv file in the script root location.
 
 .EXAMPLE
-  Get-MailboxSizeReport.ps1 -adminUPN johndoe@contoso.com -sharedMailboxes only
+  Get-MailboxSizeReport.ps1 -adminUPN user50@example.com -sharedMailboxes only
 
   Get only the shared mailboxes
 
 .EXAMPLE
-  Get-MailboxSizeReport.ps1 -adminUPN johndoe@contoso.com -sharedMailboxes no
+  Get-MailboxSizeReport.ps1 -adminUPN user50@example.com -sharedMailboxes no
 
   Get only the user mailboxes
 
 .EXAMPLE
-  Get-MailboxSizeReport.ps1 -adminUPN johndoe@contoso.com -archive:$false
+  Get-MailboxSizeReport.ps1 -adminUPN user50@example.com -archive:$false
 
   Get the mailbox size without the archive mailboxes
 
 .EXAMPLE
-  Get-MailboxSizeReport.ps1 -adminUPN johndoe@contoso.com -path c:\temp\report.csv
+  Get-MailboxSizeReport.ps1 -adminUPN user50@example.com -path c:\temp\report.csv
 
   Store CSV report in c:\temp\report.csv
 

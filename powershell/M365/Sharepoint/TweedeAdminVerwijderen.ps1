@@ -50,4 +50,4 @@ Function Remove-OnedriveSecondaryAdmin {
 }
 
 # Uitvoeren van de functie
-Remove-OnedriveSecondaryAdmin -AdminURL "https://kinderdam-admin.sharepoint.com/" -SecondaryAdmin "its_admin@kinderdam.nl"
+Remove-OnedriveSecondaryAdmin -AdminURL "https://org1-admin.sharepoint.com/" -SecondaryAdmin "user52@example.com"
