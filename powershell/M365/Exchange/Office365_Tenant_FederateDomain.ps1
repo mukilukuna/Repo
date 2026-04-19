@@ -3,7 +3,7 @@ Connect-MsolService
 Get-MsolCompanyInformation | fl *synch*
 
 #Federation
-Set-MsolDomainAuthentication -DomainName sbrdam.nl -Authentication Managed
+Set-MsolDomainAuthentication -DomainName example.org -Authentication Managed
 
 
 #AD Sync

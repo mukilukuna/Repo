@@ -20,11 +20,11 @@ Search-MailboxAuditLog -Mailboxes "Summit Travel" -har
 
 cd C:\Users\muki.lukuna.ITSYNERGY.001\Downloads\
 
-.\AuditDeletedEmails.ps1 -Mailbox info@summittravel.nl -Subject "questions ID"
-.\AuditDeletedEmails.ps1 -Mailbox info@summittravel.nl -StartDate 11/22/22 -EndDate 11/29/22
+.\AuditDeletedEmails.ps1 -Mailbox user2@example.com -Subject "questions ID"
+.\AuditDeletedEmails.ps1 -Mailbox user2@example.com -StartDate 11/22/22 -EndDate 11/29/22
 
 # Uitvoeren van verdere commando's zoals nodig
-Get-MailboxFolderPermission -Identity Hoven@w-e.nl:\agenda
+Get-MailboxFolderPermission -Identity user3@example.com:\agenda
 
 Get-MailboxCalendarConfiguration
 
@@ -41,6 +41,6 @@ get-publicfolder
 Get-Mailbox | ForEach-Object { Get-MailboxFolderPermission $_”:\agenda” } | Where { $_.User -like “bas” } | Select Identity, User, AccessRights
 Get-Mailbox | ForEach-Object { Get-MailboxFolderPermission $_":\calendar" } | Where { $_.User -like “*Mueller*” } | Select Identity, User, AccessRights
 
-Get-MailboxFolderPermission Verweij@w-e.nl:\agenda
+Get-MailboxFolderPermission user4@example.com:\agenda
 
-Get-Mailbox | Get-MailboxPermission -User Verweij@w-e.nl
+Get-Mailbox | Get-MailboxPermission -User user4@example.com

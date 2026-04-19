@@ -3,7 +3,7 @@
 
 # Configuratie variabelen: Pas de accountnaam en wachtwoord aan naar behoefte.
 accountname="its_local"          # De gebruikersnaam voor de nieuwe account.
-password=""      # Het wachtwoord voor de nieuwe account.
+password="REDACTED"      # Het wachtwoord voor de nieuwe account.
 
 # Gebruikersaccount aanmaken.
 dscl . -create /Users/$accountname
