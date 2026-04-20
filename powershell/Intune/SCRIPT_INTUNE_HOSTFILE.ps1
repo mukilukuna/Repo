@@ -12,7 +12,7 @@ Write-Host "Backup of the current hosts file created at $backupPath"
 
 # Step 3: Define the new content for the hosts file
 $newContent = @"
-10.202.10.4   vereuazusto.privatelink.file.core.windows.net
+10.0.0.7   storageaccount.privatelink.file.core.windows.net
 "@
 
 # Step 4: Replace the content of the hosts file

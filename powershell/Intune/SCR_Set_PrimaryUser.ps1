@@ -58,7 +58,7 @@
     Please feel free to use this, but make sure to credit @MrTbone_se as the original author
 
 .LINK
-    https://tbone.se
+    https://example.org
 #>
 
 #region ---------------------------------------------------[Set Script Requirements]-----------------------------------------------
@@ -86,10 +86,10 @@ param(
     [Parameter(Mandatory = $false, HelpMessage = "Filter to exclude devicenames that starts with specific strings like ('Tbone', 'Desktop'). Default is blank")]
     [string[]]$ExcludedDeviceNames = @(),
 
-    [Parameter(Mandatory = $false, HelpMessage = "Filter to exclude specific accounts as primary owners for example enrollment accounts ('wds@tbone.se','install@tbone.se'). Default is blank")]
+    [Parameter(Mandatory = $false, HelpMessage = "Filter to exclude specific accounts as primary owners for example enrollment accounts ('user53@example.com','user54@example.com'). Default is blank")]
     [string[]]$ReplaceUserAccounts = @(),
 
-    [Parameter(Mandatory = $false, HelpMessage = "Filter to keep specific accounts that always should be keept as primary owners ('Monitoring@tbone.se'). Default is blank")]
+    [Parameter(Mandatory = $false, HelpMessage = "Filter to keep specific accounts that always should be keept as primary owners ('user55@example.com'). Default is blank")]
     [string[]]$KeepUserAccounts = @(),
 
     [Parameter(Mandatory = $false, HelpMessage = "Time period in days to retrieve user sign-in activity logs. Default is 30 days")]

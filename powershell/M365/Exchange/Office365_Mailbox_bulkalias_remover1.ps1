@@ -7,7 +7,7 @@ $Mailboxes = Get-Mailbox -ResultSize Unlimited
 foreach ($Mailbox in $Mailboxes) {
 
     # Change @contoso.com to the domain that you want to remove
-    $Mailbox.EmailAddresses | Where-Object { ($_ -clike "smtp*") -and ($_ -like "*@sbrdam.nl") } | 
+    $Mailbox.EmailAddresses | Where-Object { ($_ -clike "smtp*") -and ($_ -like "*@example.org") } | 
 
     # Perform operation on each item
     ForEach-Object {

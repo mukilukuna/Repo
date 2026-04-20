@@ -26,7 +26,7 @@ Function Remove-OnedriveSecondaryAdmin($AdminURL, $SecondaryAdmin)
 
 #Adminurl = sharepoint site that we want to connect to.
 
-Remove-OnedriveSecondaryAdmin -SecondaryAdmin "adm_evivandervelden@kinderdam.nl" -AdminURL "https://kinderdam-admin.sharepoint.com/"
+Remove-OnedriveSecondaryAdmin -SecondaryAdmin "user51@example.com" -AdminURL "https://org1-admin.sharepoint.com/"
 
 #parameter secondarayadmin that is wanted to be removed, 
 

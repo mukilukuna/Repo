@@ -18,7 +18,7 @@ If ($Query.Name -notcontains $LAPSAdmin) {
         $characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()_+=-"
 
         # Create a random password
-        $password = ""
+        $password = "REDACTED"
         for ($i = 1; $i -le $length; $i++) {
             $randomIndex = Get-Random -Minimum 0 -Maximum $characters.Length
             $password += $characters[$randomIndex]
