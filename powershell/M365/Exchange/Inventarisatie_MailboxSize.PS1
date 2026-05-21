@@ -73,7 +73,7 @@ Function ConnectTo-EXO {
         Connects to EXO when no connection exists. Checks for EXO v2 module
   #>
   
-  process {
+  process {k
     # Check if EXO is installed and connect if no connection exists
     if ((Get-Module -ListAvailable -Name ExchangeOnlineManagement) -eq $null)
     {
