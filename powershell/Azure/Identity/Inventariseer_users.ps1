@@ -1,4 +1,4 @@
-Connect-MgGraph
+Connect-MgGraph -Scopes "User.Read.All", "AuditLog.Read.All", "Directory.Read.All"
 # Datum voor de bestandsnaam
 $datum = Get-Date -Format "yyyyMMdd"
 
@@ -14,7 +14,8 @@ foreach ($user in $users) {
         "Member" {
             if ($user.MailNickname -like "*shared*") {
                 $userType = "Shared"
-            } else {
+            }
+            else {
                 $userType = "User"
             }
         }
@@ -33,16 +34,16 @@ foreach ($user in $users) {
 
     # Voeg de gegevens toe aan de resultaten
     $result += [PSCustomObject]@{
-        Naam                   = $user.DisplayName
-        Email                  = $user.UserPrincipalName
-        Type                   = $userType
-        Functie                = $user.JobTitle
-        Licentie               = $hasLicense
-        ActiveDirectorySynced  = $adSynced
-        LaatsteAanmelding      = $lastSignIn
-        GastExternGebruiker    = $user.UserType
+        Naam                  = $user.DisplayName
+        Email                 = $user.UserPrincipalName
+        Type                  = $userType
+        Functie               = $user.JobTitle
+        Licentie              = $hasLicense
+        ActiveDirectorySynced = $adSynced
+        LaatsteAanmelding     = $lastSignIn
+        GastExternGebruiker   = $user.UserType
     }
 }
 
 # Exporteer de resultaten naar een CSV-bestand
-$result | Export-Csv -Path "C:\temp\xtra\AzureAD_Gebruikers_$datum.csv" -NoTypeInformation -Encoding UTF8
+$result | Export-Csv -Path "C:\temp\AzureAD_Gebruikers_$datum.csv" -NoTypeInformation -Encoding UTF8
