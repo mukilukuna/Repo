@@ -10,9 +10,6 @@
 @description('Full resource ID of the Log Analytics Workspace.')
 param workspaceId string
 
-@description('Resource ID of the resource group being monitored (customer workload RG).')
-param targetResourceGroupId string
-
 @description('Deployment tier.')
 @allowed(['Essential', 'Managed', 'Advanced'])
 param tier string
@@ -33,11 +30,20 @@ param actionGroupP3Id string
 @description('Customer identifier code.')
 param klantCode string
 
+@description('Optional: Resource ID of the VPN Gateway to monitor. Leave empty to skip VPN GW metric alerts.')
+param vpnGatewayResourceId string = ''
+
+@description('Optional: Resource ID of the primary Storage Account to monitor. Leave empty to skip Storage metric alerts.')
+param storageAccountResourceId string = ''
+
 @description('Resource tags to apply.')
 param tags object = {}
 
 var isManagedOrAbove = tier != 'Essential'
-var isAdvanced = tier == 'Advanced'
+var isAdvanced   = tier == 'Advanced'
+var deployVpnAlerts     = isManagedOrAbove && !empty(vpnGatewayResourceId)
+var deployStorageAlerts = isManagedOrAbove && !empty(storageAccountResourceId)
+var fileServiceResourceId = empty(storageAccountResourceId) ? '' : '${storageAccountResourceId}/fileServices/default'
 
 // ── 1. Service Health alert (P2) ──────────────────────────────
 resource alertServiceHealth 'Microsoft.Insights/activityLogAlerts@2020-10-01' = {
@@ -213,7 +219,7 @@ resource alertRsvSoftDelete 'Microsoft.Insights/activityLogAlerts@2020-10-01' = 
 }
 
 // ── 7. VPN Gateway – tunnel offline, no redundant tunnel (P1) ─
-resource alertVpnTunnelDownP1 'Microsoft.Insights/metricAlerts@2018-03-01' = if (isManagedOrAbove) {
+resource alertVpnTunnelDownP1 'Microsoft.Insights/metricAlerts@2018-03-01' = if (deployVpnAlerts) {
   name: 'alert-vpngw-tunnel-down-p1-${klantCode}'
   location: 'global'
   tags: tags
@@ -223,9 +229,7 @@ resource alertVpnTunnelDownP1 'Microsoft.Insights/metricAlerts@2018-03-01' = if 
     enabled: true
     evaluationFrequency: 'PT1M'
     windowSize: 'PT5M'
-    scopes: [targetResourceGroupId]
-    targetResourceType: 'Microsoft.Network/virtualNetworkGateways'
-    targetResourceRegion: location
+    scopes: [vpnGatewayResourceId]
     criteria: {
       'odata.type': 'Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria'
       allOf: [
@@ -246,7 +250,7 @@ resource alertVpnTunnelDownP1 'Microsoft.Insights/metricAlerts@2018-03-01' = if 
 }
 
 // ── 8. VPN Gateway – tunnel offline, redundant active (P2) ───
-resource alertVpnTunnelDownP2 'Microsoft.Insights/metricAlerts@2018-03-01' = if (isManagedOrAbove) {
+resource alertVpnTunnelDownP2 'Microsoft.Insights/metricAlerts@2018-03-01' = if (deployVpnAlerts) {
   name: 'alert-vpngw-tunnel-down-p2-${klantCode}'
   location: 'global'
   tags: tags
@@ -256,9 +260,7 @@ resource alertVpnTunnelDownP2 'Microsoft.Insights/metricAlerts@2018-03-01' = if 
     enabled: true
     evaluationFrequency: 'PT1M'
     windowSize: 'PT5M'
-    scopes: [targetResourceGroupId]
-    targetResourceType: 'Microsoft.Network/virtualNetworkGateways'
-    targetResourceRegion: location
+    scopes: [vpnGatewayResourceId]
     criteria: {
       'odata.type': 'Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria'
       allOf: [
@@ -279,7 +281,7 @@ resource alertVpnTunnelDownP2 'Microsoft.Insights/metricAlerts@2018-03-01' = if 
 }
 
 // ── 9. VPN Gateway – bandwidth > 80% SKU limit (P3, dynamic) ─
-resource alertVpnBandwidth 'Microsoft.Insights/metricAlerts@2018-03-01' = if (isManagedOrAbove) {
+resource alertVpnBandwidth 'Microsoft.Insights/metricAlerts@2018-03-01' = if (deployVpnAlerts) {
   name: 'alert-vpngw-bandwidth-p3-${klantCode}'
   location: 'global'
   tags: tags
@@ -289,9 +291,7 @@ resource alertVpnBandwidth 'Microsoft.Insights/metricAlerts@2018-03-01' = if (is
     enabled: true
     evaluationFrequency: 'PT15M'
     windowSize: 'PT15M'
-    scopes: [targetResourceGroupId]
-    targetResourceType: 'Microsoft.Network/virtualNetworkGateways'
-    targetResourceRegion: location
+    scopes: [vpnGatewayResourceId]
     criteria: {
       'odata.type': 'Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria'
       allOf: [
@@ -431,7 +431,7 @@ resource alertAvdScalingFailed 'Microsoft.Insights/scheduledQueryRules@2023-03-1
 }
 
 // ── 13. Storage availability < 99.9% (P1) ────────────────────
-resource alertStorageAvailability 'Microsoft.Insights/metricAlerts@2018-03-01' = if (isManagedOrAbove) {
+resource alertStorageAvailability 'Microsoft.Insights/metricAlerts@2018-03-01' = if (deployStorageAlerts) {
   name: 'alert-storage-availability-p1-${klantCode}'
   location: 'global'
   tags: tags
@@ -441,9 +441,7 @@ resource alertStorageAvailability 'Microsoft.Insights/metricAlerts@2018-03-01' =
     enabled: true
     evaluationFrequency: 'PT1M'
     windowSize: 'PT5M'
-    scopes: [targetResourceGroupId]
-    targetResourceType: 'Microsoft.Storage/storageAccounts'
-    targetResourceRegion: location
+    scopes: [storageAccountResourceId]
     criteria: {
       'odata.type': 'Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria'
       allOf: [
@@ -464,7 +462,7 @@ resource alertStorageAvailability 'Microsoft.Insights/metricAlerts@2018-03-01' =
 }
 
 // ── 14. Storage capacity > 80% (P3) ─────────────────────────
-resource alertStorageCapacityP3 'Microsoft.Insights/metricAlerts@2018-03-01' = if (isManagedOrAbove) {
+resource alertStorageCapacityP3 'Microsoft.Insights/metricAlerts@2018-03-01' = if (deployStorageAlerts) {
   name: 'alert-storage-capacity-80-p3-${klantCode}'
   location: 'global'
   tags: tags
@@ -474,9 +472,7 @@ resource alertStorageCapacityP3 'Microsoft.Insights/metricAlerts@2018-03-01' = i
     enabled: true
     evaluationFrequency: 'PT1H'
     windowSize: 'PT1H'
-    scopes: [targetResourceGroupId]
-    targetResourceType: 'Microsoft.Storage/storageAccounts'
-    targetResourceRegion: location
+    scopes: [storageAccountResourceId]
     criteria: {
       'odata.type': 'Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria'
       allOf: [
@@ -498,7 +494,7 @@ resource alertStorageCapacityP3 'Microsoft.Insights/metricAlerts@2018-03-01' = i
 }
 
 // ── 15. Storage capacity > 95% (P2) ─────────────────────────
-resource alertStorageCapacityP2 'Microsoft.Insights/metricAlerts@2018-03-01' = if (isManagedOrAbove) {
+resource alertStorageCapacityP2 'Microsoft.Insights/metricAlerts@2018-03-01' = if (deployStorageAlerts) {
   name: 'alert-storage-capacity-95-p2-${klantCode}'
   location: 'global'
   tags: tags
@@ -508,9 +504,7 @@ resource alertStorageCapacityP2 'Microsoft.Insights/metricAlerts@2018-03-01' = i
     enabled: true
     evaluationFrequency: 'PT1H'
     windowSize: 'PT1H'
-    scopes: [targetResourceGroupId]
-    targetResourceType: 'Microsoft.Storage/storageAccounts'
-    targetResourceRegion: location
+    scopes: [storageAccountResourceId]
     criteria: {
       'odata.type': 'Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria'
       allOf: [
@@ -532,7 +526,7 @@ resource alertStorageCapacityP2 'Microsoft.Insights/metricAlerts@2018-03-01' = i
 }
 
 // ── 16. Azure Files – transaction throttling > 10 min (P2) ──
-resource alertAzureFilesThrottling 'Microsoft.Insights/metricAlerts@2018-03-01' = if (isAdvanced) {
+resource alertAzureFilesThrottling 'Microsoft.Insights/metricAlerts@2018-03-01' = if (isAdvanced && !empty(storageAccountResourceId)) {
   name: 'alert-azurefiles-throttling-p2-${klantCode}'
   location: 'global'
   tags: tags
@@ -542,9 +536,7 @@ resource alertAzureFilesThrottling 'Microsoft.Insights/metricAlerts@2018-03-01' 
     enabled: true
     evaluationFrequency: 'PT5M'
     windowSize: 'PT10M'
-    scopes: [targetResourceGroupId]
-    targetResourceType: 'Microsoft.Storage/storageAccounts/fileServices'
-    targetResourceRegion: location
+    scopes: [fileServiceResourceId]
     criteria: {
       'odata.type': 'Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria'
       allOf: [

@@ -27,14 +27,14 @@ param tags object = {}
 
 // ── Alert Processing Rule – maintenance suppression ───────────
 // APRs must always be deployed in the 'global' location.
-resource apr 'Microsoft.AlertsManagement/actionRules@2023-05-01-preview' = {
+resource apr 'Microsoft.AlertsManagement/actionRules@2021-08-08' = {
   name: 'apr-maintenance-${klantCode}'
   location: 'global'
   tags: tags
   properties: {
-    description: 'Suppresses all alerts during the weekly maintenance window (${maintenanceWindowDayOfWeek} ${maintenanceWindowStart}–${maintenanceWindowEnd} UTC).'
+    description: 'Suppresses all alerts during the weekly maintenance window (${maintenanceWindowDayOfWeek} ${maintenanceWindowStart}‚${maintenanceWindowEnd} UTC).'
     scopes: [targetResourceGroupId]
-    enabled: true
+    status: 'Enabled'
     schedule: {
       timeZone: 'UTC'
       recurrences: [

@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.44.1.10279",
-      "templateHash": "13756553616946206368"
+      "templateHash": "15013341394595336740"
     }
   },
   "parameters": {
@@ -113,6 +113,20 @@
       "metadata": {
         "description": "Maintenance window end time (HH:mm UTC)."
       }
+    },
+    "vpnGatewayResourceId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Optional: Resource ID of the VPN Gateway in the monitored RG. Required for VPN Gateway metric alerts."
+      }
+    },
+    "storageAccountResourceId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Optional: Resource ID of the primary Storage Account to monitor. Required for Storage metric alerts."
+      }
     }
   },
   "variables": {
@@ -155,7 +169,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.44.1.10279",
-              "templateHash": "12408673081095361450"
+              "templateHash": "15169339768423036255"
             }
           },
           "parameters": {
@@ -240,7 +254,7 @@
                 "criteria": {
                   "allOf": [
                     {
-                      "query": "            Usage\r\n            | where TimeGenerated > ago(1d)\r\n            | summarize IngestedGB = sum(Quantity) / 1000\r\n            | where IngestedGB >= ${dailyCapGb} * 0.8\r\n          ",
+                      "query": "[format('Usage | where TimeGenerated > ago(1d) | summarize IngestedGB = sum(Quantity) / 1000 | where IngestedGB >= {0} * 0.8', parameters('dailyCapGb'))]",
                       "timeAggregation": "Count",
                       "operator": "GreaterThanOrEqual",
                       "threshold": 1,
@@ -924,9 +938,6 @@
           "workspaceId": {
             "value": "[reference('law').outputs.workspaceId.value]"
           },
-          "targetResourceGroupId": {
-            "value": "[parameters('monitoredResourceGroupId')]"
-          },
           "tier": {
             "value": "[parameters('tier')]"
           },
@@ -947,6 +958,12 @@
           },
           "tags": {
             "value": "[variables('commonTags')]"
+          },
+          "vpnGatewayResourceId": {
+            "value": "[parameters('vpnGatewayResourceId')]"
+          },
+          "storageAccountResourceId": {
+            "value": "[parameters('storageAccountResourceId')]"
           }
         },
         "template": {
@@ -956,7 +973,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.44.1.10279",
-              "templateHash": "8305137932360338178"
+              "templateHash": "8764215766636782416"
             }
           },
           "parameters": {
@@ -964,12 +981,6 @@
               "type": "string",
               "metadata": {
                 "description": "Full resource ID of the Log Analytics Workspace."
-              }
-            },
-            "targetResourceGroupId": {
-              "type": "string",
-              "metadata": {
-                "description": "Resource ID of the resource group being monitored (customer workload RG)."
               }
             },
             "tier": {
@@ -1016,6 +1027,20 @@
                 "description": "Customer identifier code."
               }
             },
+            "vpnGatewayResourceId": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Optional: Resource ID of the VPN Gateway to monitor. Leave empty to skip VPN GW metric alerts."
+              }
+            },
+            "storageAccountResourceId": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Optional: Resource ID of the primary Storage Account to monitor. Leave empty to skip Storage metric alerts."
+              }
+            },
             "tags": {
               "type": "object",
               "defaultValue": {},
@@ -1026,7 +1051,10 @@
           },
           "variables": {
             "isManagedOrAbove": "[not(equals(parameters('tier'), 'Essential'))]",
-            "isAdvanced": "[equals(parameters('tier'), 'Advanced')]"
+            "isAdvanced": "[equals(parameters('tier'), 'Advanced')]",
+            "deployVpnAlerts": "[and(variables('isManagedOrAbove'), not(empty(parameters('vpnGatewayResourceId'))))]",
+            "deployStorageAlerts": "[and(variables('isManagedOrAbove'), not(empty(parameters('storageAccountResourceId'))))]",
+            "fileServiceResourceId": "[if(empty(parameters('storageAccountResourceId')), '', format('{0}/fileServices/default', parameters('storageAccountResourceId')))]"
           },
           "resources": [
             {
@@ -1256,7 +1284,7 @@
               }
             },
             {
-              "condition": "[variables('isManagedOrAbove')]",
+              "condition": "[variables('deployVpnAlerts')]",
               "type": "Microsoft.Insights/metricAlerts",
               "apiVersion": "2018-03-01",
               "name": "[format('alert-vpngw-tunnel-down-p1-{0}', parameters('klantCode'))]",
@@ -1269,10 +1297,8 @@
                 "evaluationFrequency": "PT1M",
                 "windowSize": "PT5M",
                 "scopes": [
-                  "[parameters('targetResourceGroupId')]"
+                  "[parameters('vpnGatewayResourceId')]"
                 ],
-                "targetResourceType": "Microsoft.Network/virtualNetworkGateways",
-                "targetResourceRegion": "[parameters('location')]",
                 "criteria": {
                   "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
                   "allOf": [
@@ -1294,7 +1320,7 @@
               }
             },
             {
-              "condition": "[variables('isManagedOrAbove')]",
+              "condition": "[variables('deployVpnAlerts')]",
               "type": "Microsoft.Insights/metricAlerts",
               "apiVersion": "2018-03-01",
               "name": "[format('alert-vpngw-tunnel-down-p2-{0}', parameters('klantCode'))]",
@@ -1307,10 +1333,8 @@
                 "evaluationFrequency": "PT1M",
                 "windowSize": "PT5M",
                 "scopes": [
-                  "[parameters('targetResourceGroupId')]"
+                  "[parameters('vpnGatewayResourceId')]"
                 ],
-                "targetResourceType": "Microsoft.Network/virtualNetworkGateways",
-                "targetResourceRegion": "[parameters('location')]",
                 "criteria": {
                   "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
                   "allOf": [
@@ -1332,7 +1356,7 @@
               }
             },
             {
-              "condition": "[variables('isManagedOrAbove')]",
+              "condition": "[variables('deployVpnAlerts')]",
               "type": "Microsoft.Insights/metricAlerts",
               "apiVersion": "2018-03-01",
               "name": "[format('alert-vpngw-bandwidth-p3-{0}', parameters('klantCode'))]",
@@ -1345,10 +1369,8 @@
                 "evaluationFrequency": "PT15M",
                 "windowSize": "PT15M",
                 "scopes": [
-                  "[parameters('targetResourceGroupId')]"
+                  "[parameters('vpnGatewayResourceId')]"
                 ],
-                "targetResourceType": "Microsoft.Network/virtualNetworkGateways",
-                "targetResourceRegion": "[parameters('location')]",
                 "criteria": {
                   "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
                   "allOf": [
@@ -1488,7 +1510,7 @@
               }
             },
             {
-              "condition": "[variables('isManagedOrAbove')]",
+              "condition": "[variables('deployStorageAlerts')]",
               "type": "Microsoft.Insights/metricAlerts",
               "apiVersion": "2018-03-01",
               "name": "[format('alert-storage-availability-p1-{0}', parameters('klantCode'))]",
@@ -1501,10 +1523,8 @@
                 "evaluationFrequency": "PT1M",
                 "windowSize": "PT5M",
                 "scopes": [
-                  "[parameters('targetResourceGroupId')]"
+                  "[parameters('storageAccountResourceId')]"
                 ],
-                "targetResourceType": "Microsoft.Storage/storageAccounts",
-                "targetResourceRegion": "[parameters('location')]",
                 "criteria": {
                   "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
                   "allOf": [
@@ -1526,7 +1546,7 @@
               }
             },
             {
-              "condition": "[variables('isManagedOrAbove')]",
+              "condition": "[variables('deployStorageAlerts')]",
               "type": "Microsoft.Insights/metricAlerts",
               "apiVersion": "2018-03-01",
               "name": "[format('alert-storage-capacity-80-p3-{0}', parameters('klantCode'))]",
@@ -1539,10 +1559,8 @@
                 "evaluationFrequency": "PT1H",
                 "windowSize": "PT1H",
                 "scopes": [
-                  "[parameters('targetResourceGroupId')]"
+                  "[parameters('storageAccountResourceId')]"
                 ],
-                "targetResourceType": "Microsoft.Storage/storageAccounts",
-                "targetResourceRegion": "[parameters('location')]",
                 "criteria": {
                   "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
                   "allOf": [
@@ -1564,7 +1582,7 @@
               }
             },
             {
-              "condition": "[variables('isManagedOrAbove')]",
+              "condition": "[variables('deployStorageAlerts')]",
               "type": "Microsoft.Insights/metricAlerts",
               "apiVersion": "2018-03-01",
               "name": "[format('alert-storage-capacity-95-p2-{0}', parameters('klantCode'))]",
@@ -1577,10 +1595,8 @@
                 "evaluationFrequency": "PT1H",
                 "windowSize": "PT1H",
                 "scopes": [
-                  "[parameters('targetResourceGroupId')]"
+                  "[parameters('storageAccountResourceId')]"
                 ],
-                "targetResourceType": "Microsoft.Storage/storageAccounts",
-                "targetResourceRegion": "[parameters('location')]",
                 "criteria": {
                   "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
                   "allOf": [
@@ -1602,7 +1618,7 @@
               }
             },
             {
-              "condition": "[variables('isAdvanced')]",
+              "condition": "[and(variables('isAdvanced'), not(empty(parameters('storageAccountResourceId'))))]",
               "type": "Microsoft.Insights/metricAlerts",
               "apiVersion": "2018-03-01",
               "name": "[format('alert-azurefiles-throttling-p2-{0}', parameters('klantCode'))]",
@@ -1615,10 +1631,8 @@
                 "evaluationFrequency": "PT5M",
                 "windowSize": "PT10M",
                 "scopes": [
-                  "[parameters('targetResourceGroupId')]"
+                  "[variables('fileServiceResourceId')]"
                 ],
-                "targetResourceType": "Microsoft.Storage/storageAccounts/fileServices",
-                "targetResourceRegion": "[parameters('location')]",
                 "criteria": {
                   "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
                   "allOf": [
@@ -1852,7 +1866,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.44.1.10279",
-              "templateHash": "4870271947137454721"
+              "templateHash": "8769741278950254833"
             }
           },
           "parameters": {
@@ -1909,16 +1923,16 @@
           "resources": [
             {
               "type": "Microsoft.AlertsManagement/actionRules",
-              "apiVersion": "2023-05-01-preview",
+              "apiVersion": "2021-08-08",
               "name": "[format('apr-maintenance-{0}', parameters('klantCode'))]",
               "location": "global",
               "tags": "[parameters('tags')]",
               "properties": {
-                "description": "[format('Suppresses all alerts during the weekly maintenance window ({0} {1}–{2} UTC).', parameters('maintenanceWindowDayOfWeek'), parameters('maintenanceWindowStart'), parameters('maintenanceWindowEnd'))]",
+                "description": "[format('Suppresses all alerts during the weekly maintenance window ({0} {1}‚{2} UTC).', parameters('maintenanceWindowDayOfWeek'), parameters('maintenanceWindowStart'), parameters('maintenanceWindowEnd'))]",
                 "scopes": [
                   "[parameters('targetResourceGroupId')]"
                 ],
-                "enabled": true,
+                "status": "Enabled",
                 "schedule": {
                   "timeZone": "UTC",
                   "recurrences": [

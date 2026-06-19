@@ -75,34 +75,30 @@ Write-Host "Mode       : $(if ($WhatIf) { 'What-If (no deployment)' } else { 'DE
 
 # ── Step 1: Set subscription ─────────────────────────────────
 Write-Host "--- Step 1: Setting subscription context ---" -ForegroundColor Yellow
-az account set --subscription $SubscriptionId
+& $az account set --subscription $SubscriptionId
 if ($LASTEXITCODE -ne 0) { throw "Failed to set subscription." }
 
 # ── Step 2: Build (lint/compile check) ──────────────────────
 Write-Host "`n--- Step 2: Building Bicep (lint/compile) ---" -ForegroundColor Yellow
-az bicep build --file $template
+& $az bicep build --file $template
 if ($LASTEXITCODE -ne 0) { throw "Bicep build failed. Fix errors before deploying." }
 Write-Host "Bicep build clean." -ForegroundColor Green
 
 # ── Step 3: Ensure resource group exists ─────────────────────
 Write-Host "`n--- Step 3: Ensuring resource group exists ---" -ForegroundColor Yellow
-$rgExists = az group show --name $ResourceGroup --subscription $SubscriptionId 2>$null | ConvertFrom-Json -ErrorAction SilentlyContinue
+$rgExists = (& $az group show --name $ResourceGroup --subscription $SubscriptionId 2>$null) | ConvertFrom-Json -ErrorAction SilentlyContinue
 if (-not $rgExists) {
-    if ($WhatIf) {
-        Write-Host "Resource group $ResourceGroup does not exist. Would be created on real deploy." -ForegroundColor Cyan
-    } else {
-        Write-Host "Creating resource group $ResourceGroup in $Location..."
-        az group create --name $ResourceGroup --location $Location `
-            --tags Environment=monitoring ManagedBy=platform-team KlantCode=$KlantCode 'baseline-version=0.1-pilot'
-        if ($LASTEXITCODE -ne 0) { throw "Failed to create resource group." }
-    }
+    Write-Host "Creating resource group $ResourceGroup in $Location$(if ($WhatIf) { ' (needed for what-if)' })..."
+    & $az group create --name $ResourceGroup --location $Location `
+        --tags Environment=monitoring ManagedBy=platform-team KlantCode=$KlantCode 'baseline-version=0.1-pilot'
+    if ($LASTEXITCODE -ne 0) { throw "Failed to create resource group." }
 } else {
     Write-Host "Resource group $ResourceGroup already exists."
 }
 
 # ── Step 4: What-If ──────────────────────────────────────────
 Write-Host "`n--- Step 4: Running what-if preflight ---" -ForegroundColor Yellow
-az deployment group what-if `
+& $az deployment group what-if `
     --resource-group $ResourceGroup `
     --template-file  $template `
     --parameters     $paramFile `
@@ -115,7 +111,7 @@ if (-not $WhatIf) {
     Write-Host "`n--- Step 5: Deploying ---" -ForegroundColor Yellow
     $deploymentName = "monitoring-$KlantCode-$(Get-Date -Format 'yyyyMMdd-HHmm')"
 
-    az deployment group create `
+    & $az deployment group create `
         --name           $deploymentName `
         --resource-group $ResourceGroup `
         --template-file  $template `

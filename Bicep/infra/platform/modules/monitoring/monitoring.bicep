@@ -49,6 +49,12 @@ param maintenanceWindowStart string = '02:00'
 @description('Maintenance window end time (HH:mm UTC).')
 param maintenanceWindowEnd string = '06:00'
 
+@description('Optional: Resource ID of the VPN Gateway in the monitored RG. Required for VPN Gateway metric alerts.')
+param vpnGatewayResourceId string = ''
+
+@description('Optional: Resource ID of the primary Storage Account to monitor. Required for Storage metric alerts.')
+param storageAccountResourceId string = ''
+
 // Whether to deploy Lighthouse (requires all three Lighthouse params to be non-empty)
 var deployLighthouse = !empty(monitoringReaderGroupId) && !empty(monitoringContributorGroupId) && !empty(managingTenantId)
 
@@ -109,7 +115,6 @@ module alertRules './alert-rules.bicep' = {
   name: 'deploy-alert-rules-${klantCode}'
   params: {
     workspaceId: law.outputs.workspaceId
-    targetResourceGroupId: monitoredResourceGroupId
     tier: tier
     location: location
     actionGroupP1Id: actionGroups.outputs.actionGroupP1Id
@@ -117,6 +122,8 @@ module alertRules './alert-rules.bicep' = {
     actionGroupP3Id: actionGroups.outputs.actionGroupP3Id
     klantCode: klantCode
     tags: commonTags
+    vpnGatewayResourceId: vpnGatewayResourceId
+    storageAccountResourceId: storageAccountResourceId
   }
 }
 
