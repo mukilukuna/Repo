@@ -1,3 +1,12 @@
+# Controleer en installeer vereiste modules
+foreach ($module in @('Microsoft.Graph')) {
+    if (-not (Get-Module -ListAvailable -Name $module)) {
+        Write-Host "Module '$module' wordt geïnstalleerd..." -ForegroundColor Yellow
+        Install-Module -Name $module -Force -AllowClobber -Scope CurrentUser
+    }
+    Import-Module -Name $module -ErrorAction Stop
+}
+
 # Variables
 $teamId = ""  # Your Team ID
 

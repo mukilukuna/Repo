@@ -1,0 +1,168 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "languageVersion": "2.0",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.44.1.10279",
+      "templateHash": "13038460596132415768"
+    }
+  },
+  "parameters": {
+    "location": {
+      "type": "string",
+      "allowedValues": [
+        "westeurope"
+      ],
+      "metadata": {
+        "description": "Azure region for deployment. Must be westeurope."
+      }
+    },
+    "workspaceId": {
+      "type": "string",
+      "metadata": {
+        "description": "Full resource ID of the Log Analytics Workspace (reserved for Phase 2 direct query)."
+      }
+    },
+    "workspaceCustomerId": {
+      "type": "string",
+      "metadata": {
+        "description": "Workspace Customer ID (GUID) for Data Collector API."
+      }
+    },
+    "tags": {
+      "type": "object",
+      "defaultValue": {},
+      "metadata": {
+        "description": "Resource tags to apply."
+      }
+    },
+    "klantCode": {
+      "type": "string",
+      "metadata": {
+        "description": "Customer identifier code."
+      }
+    }
+  },
+  "resources": {
+    "logicApp": {
+      "type": "Microsoft.Logic/workflows",
+      "apiVersion": "2019-05-01",
+      "name": "logic-autotask-monitoring-weu",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "state": "Enabled",
+        "definition": {
+          "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+          "contentVersion": "1.0.0.0",
+          "parameters": {
+            "workspaceId": {
+              "type": "string",
+              "defaultValue": "[parameters('workspaceCustomerId')]"
+            }
+          },
+          "triggers": {
+            "http_trigger": {
+              "type": "Request",
+              "kind": "Http",
+              "inputs": {
+                "schema": {}
+              }
+            }
+          },
+          "actions": {
+            "Parse_Alert_Payload": {
+              "type": "ParseJson",
+              "inputs": {
+                "content": "@triggerBody()",
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "essentials": {
+                          "type": "object",
+                          "properties": {
+                            "severity": {
+                              "type": "string"
+                            },
+                            "alertTargetIDs": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "alertRule": {
+                              "type": "string"
+                            },
+                            "firedDateTime": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "runAfter": {}
+            },
+            "Log_To_Workspace": {
+              "type": "Http",
+              "inputs": {
+                "method": "POST",
+                "uri": "https://api.loganalytics.io/v1/workspaces/@{parameters('workspaceId')}/query",
+                "body": "@triggerBody()"
+              },
+              "runAfter": {
+                "Parse_Alert_Payload": [
+                  "Succeeded"
+                ]
+              }
+            },
+            "Return_200": {
+              "type": "Response",
+              "inputs": {
+                "statusCode": 200,
+                "body": {
+                  "status": "logged",
+                  "phase": "Phase1-ObservationMode",
+                  "klantCode": "[parameters('klantCode')]"
+                }
+              },
+              "runAfter": {
+                "Log_To_Workspace": [
+                  "Succeeded",
+                  "Failed"
+                ]
+              }
+            }
+          },
+          "outputs": {}
+        }
+      }
+    }
+  },
+  "outputs": {
+    "logicAppWebhookUri": {
+      "type": "securestring",
+      "metadata": {
+        "description": "HTTPS trigger URL for the Logic App. Pass this to action-groups.bicep."
+      },
+      "value": "[listCallbackUrl(format('{0}/triggers/http_trigger', resourceId('Microsoft.Logic/workflows', 'logic-autotask-monitoring-weu')), '2019-05-01').value]"
+    },
+    "logicAppId": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of the Logic App."
+      },
+      "value": "[resourceId('Microsoft.Logic/workflows', 'logic-autotask-monitoring-weu')]"
+    }
+  }
+}

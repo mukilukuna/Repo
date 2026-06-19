@@ -1,5 +1,12 @@
-# Install and connect to SharePoint Online Management Shell if not already done
-Install-Module -Name Microsoft.Online.SharePoint.PowerShell -Force -AllowClobber
+# Controleer en installeer vereiste modules
+foreach ($module in @('Microsoft.Online.SharePoint.PowerShell')) {
+    if (-not (Get-Module -ListAvailable -Name $module)) {
+        Write-Host "Module '$module' wordt geïnstalleerd..." -ForegroundColor Yellow
+        Install-Module -Name $module -Force -AllowClobber -Scope CurrentUser
+    }
+    Import-Module -Name $module -ErrorAction Stop
+}
+
 Connect-SPOService -Url 
 
 

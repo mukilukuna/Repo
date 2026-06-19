@@ -1,0 +1,105 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.44.1.10279",
+      "templateHash": "4870271947137454721"
+    }
+  },
+  "parameters": {
+    "targetResourceGroupId": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of the resource group to scope the suppression to."
+      }
+    },
+    "klantCode": {
+      "type": "string",
+      "metadata": {
+        "description": "Customer identifier code."
+      }
+    },
+    "maintenanceWindowStart": {
+      "type": "string",
+      "defaultValue": "02:00",
+      "metadata": {
+        "description": "Maintenance window start time (HH:mm, UTC)."
+      }
+    },
+    "maintenanceWindowEnd": {
+      "type": "string",
+      "defaultValue": "06:00",
+      "metadata": {
+        "description": "Maintenance window end time (HH:mm, UTC)."
+      }
+    },
+    "maintenanceWindowDayOfWeek": {
+      "type": "string",
+      "defaultValue": "Sunday",
+      "allowedValues": [
+        "Sunday",
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday"
+      ],
+      "metadata": {
+        "description": "Day of week for the weekly maintenance window."
+      }
+    },
+    "tags": {
+      "type": "object",
+      "defaultValue": {},
+      "metadata": {
+        "description": "Resource tags to apply."
+      }
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.AlertsManagement/actionRules",
+      "apiVersion": "2023-05-01-preview",
+      "name": "[format('apr-maintenance-{0}', parameters('klantCode'))]",
+      "location": "global",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "description": "[format('Suppresses all alerts during the weekly maintenance window ({0} {1}–{2} UTC).', parameters('maintenanceWindowDayOfWeek'), parameters('maintenanceWindowStart'), parameters('maintenanceWindowEnd'))]",
+        "scopes": [
+          "[parameters('targetResourceGroupId')]"
+        ],
+        "enabled": true,
+        "schedule": {
+          "timeZone": "UTC",
+          "recurrences": [
+            {
+              "recurrenceType": "Weekly",
+              "daysOfWeek": [
+                "[parameters('maintenanceWindowDayOfWeek')]"
+              ],
+              "startTime": "[parameters('maintenanceWindowStart')]",
+              "endTime": "[parameters('maintenanceWindowEnd')]"
+            }
+          ]
+        },
+        "actions": [
+          {
+            "actionType": "Suppression"
+          }
+        ]
+      }
+    }
+  ],
+  "outputs": {
+    "aprId": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of the Alert Processing Rule."
+      },
+      "value": "[resourceId('Microsoft.AlertsManagement/actionRules', format('apr-maintenance-{0}', parameters('klantCode')))]"
+    }
+  }
+}

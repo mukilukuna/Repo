@@ -1,5 +1,11 @@
-# Stap 1: Installeer de Microsoft Graph PowerShell-module als je deze nog niet hebt
-Install-Module Microsoft.Graph -Scope CurrentUser
+# Controleer en installeer vereiste modules
+foreach ($module in @('Microsoft.Graph')) {
+    if (-not (Get-Module -ListAvailable -Name $module)) {
+        Write-Host "Module '$module' wordt geïnstalleerd..." -ForegroundColor Yellow
+        Install-Module -Name $module -Force -AllowClobber -Scope CurrentUser
+    }
+    Import-Module -Name $module -ErrorAction Stop
+}
 
 # Stap 2: Maak verbinding met Microsoft Graph met de benodigde machtigingen
 Connect-MgGraph -Scopes "User.Read.All", "AuditLog.Read.All", "Directory.Read.All"

@@ -7,6 +7,16 @@
 
 Gemaakt door: Muki lukuna samen met chatGPT
 #>
+
+# Controleer en installeer vereiste modules
+foreach ($module in @('Az.Accounts', 'Az.Storage')) {
+    if (-not (Get-Module -ListAvailable -Name $module)) {
+        Write-Host "Module '$module' wordt geïnstalleerd..." -ForegroundColor Yellow
+        Install-Module -Name $module -Force -AllowClobber -Scope CurrentUser
+    }
+    Import-Module -Name $module -ErrorAction Stop
+}
+
 Connect-AzAccount -UseDeviceAuthentication
 #Vervang <StorageAccountName> en <ResourceGroupName> door de naam van uw opslagaccount en resourcegroep om de context te verkrijgen:
 $storageAccount = Get-AzStorageAccount -ResourceGroupName "DST-EUAZU-RSG" -Name "dsteuazustodata"

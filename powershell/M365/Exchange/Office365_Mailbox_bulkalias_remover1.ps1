@@ -1,4 +1,12 @@
 
+# Controleer en installeer vereiste modules
+foreach ($module in @('ExchangeOnlineManagement')) {
+    if (-not (Get-Module -ListAvailable -Name $module)) {
+        Write-Host "Module '$module' wordt geïnstalleerd..." -ForegroundColor Yellow
+        Install-Module -Name $module -Force -AllowClobber -Scope CurrentUser
+    }
+    Import-Module -Name $module -ErrorAction Stop
+}
 
 # Get all mailboxes
 $Mailboxes = Get-Mailbox -ResultSize Unlimited

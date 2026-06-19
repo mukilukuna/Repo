@@ -1,0 +1,249 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.44.1.10279",
+      "templateHash": "1998472236588199761"
+    }
+  },
+  "parameters": {
+    "workspaceId": {
+      "type": "string",
+      "metadata": {
+        "description": "Full resource ID of the Log Analytics Workspace."
+      }
+    },
+    "tier": {
+      "type": "string",
+      "allowedValues": [
+        "Essential",
+        "Managed",
+        "Advanced"
+      ],
+      "metadata": {
+        "description": "Deployment tier. Determines which DCRs are deployed."
+      }
+    },
+    "location": {
+      "type": "string",
+      "allowedValues": [
+        "westeurope"
+      ],
+      "metadata": {
+        "description": "Azure region for deployment. Must be westeurope."
+      }
+    },
+    "tags": {
+      "type": "object",
+      "defaultValue": {},
+      "metadata": {
+        "description": "Resource tags to apply."
+      }
+    }
+  },
+  "variables": {
+    "isManagedOrAbove": "[not(equals(parameters('tier'), 'Essential'))]",
+    "isAdvanced": "[equals(parameters('tier'), 'Advanced')]"
+  },
+  "resources": [
+    {
+      "condition": "[variables('isManagedOrAbove')]",
+      "type": "Microsoft.Insights/dataCollectionRules",
+      "apiVersion": "2023-03-11",
+      "name": "dcr-vm-managed-weu",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "description": "Collect VM performance counters and Windows Event Logs.",
+        "dataSources": {
+          "performanceCounters": [
+            {
+              "name": "VMInsightsPerf",
+              "streams": [
+                "Microsoft-InsightsMetrics"
+              ],
+              "samplingFrequencyInSeconds": 60,
+              "counterSpecifiers": [
+                "\\Processor Information(_Total)\\% Processor Time",
+                "\\Memory\\Available Bytes",
+                "\\LogicalDisk(_Total)\\% Disk Time",
+                "\\LogicalDisk(_Total)\\Disk Reads/sec",
+                "\\LogicalDisk(_Total)\\Disk Writes/sec",
+                "\\Network Interface(*)\\Bytes Total/sec"
+              ]
+            }
+          ],
+          "windowsEventLogs": [
+            {
+              "name": "WindowsEventLogs",
+              "streams": [
+                "Microsoft-Event"
+              ],
+              "xPathQueries": [
+                "Application!*[System[(Level=1 or Level=2 or Level=3)]]",
+                "System!*[System[(Level=1 or Level=2 or Level=3)]]"
+              ]
+            }
+          ]
+        },
+        "destinations": {
+          "logAnalytics": [
+            {
+              "name": "workspace",
+              "workspaceResourceId": "[parameters('workspaceId')]"
+            }
+          ]
+        },
+        "dataFlows": [
+          {
+            "streams": [
+              "Microsoft-InsightsMetrics"
+            ],
+            "destinations": [
+              "workspace"
+            ]
+          },
+          {
+            "streams": [
+              "Microsoft-Event"
+            ],
+            "destinations": [
+              "workspace"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "condition": "[variables('isManagedOrAbove')]",
+      "type": "Microsoft.Insights/dataCollectionRules",
+      "apiVersion": "2023-03-11",
+      "name": "dcr-storage-managed-weu",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "description": "Collect Storage account capacity and transaction metrics.",
+        "dataSources": {
+          "performanceCounters": []
+        },
+        "destinations": {
+          "logAnalytics": [
+            {
+              "name": "workspace",
+              "workspaceResourceId": "[parameters('workspaceId')]"
+            }
+          ]
+        },
+        "dataFlows": []
+      }
+    },
+    {
+      "condition": "[variables('isManagedOrAbove')]",
+      "type": "Microsoft.Insights/dataCollectionRules",
+      "apiVersion": "2023-03-11",
+      "name": "dcr-rsv-managed-weu",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "description": "Collect Recovery Services Vault backup diagnostic data (AzureBackupReport).",
+        "dataSources": {
+          "performanceCounters": []
+        },
+        "destinations": {
+          "logAnalytics": [
+            {
+              "name": "workspace",
+              "workspaceResourceId": "[parameters('workspaceId')]"
+            }
+          ]
+        },
+        "dataFlows": []
+      }
+    },
+    {
+      "condition": "[variables('isManagedOrAbove')]",
+      "type": "Microsoft.Insights/dataCollectionRules",
+      "apiVersion": "2023-03-11",
+      "name": "dcr-vpngw-managed-weu",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "description": "Collect VPN Gateway diagnostic logs (Gateway + Tunnel).",
+        "dataSources": {
+          "performanceCounters": []
+        },
+        "destinations": {
+          "logAnalytics": [
+            {
+              "name": "workspace",
+              "workspaceResourceId": "[parameters('workspaceId')]"
+            }
+          ]
+        },
+        "dataFlows": []
+      }
+    },
+    {
+      "condition": "[variables('isAdvanced')]",
+      "type": "Microsoft.Insights/dataCollectionRules",
+      "apiVersion": "2023-03-11",
+      "name": "dcr-avd-advanced-weu",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "description": "Collect AVD host pool diagnostic data (connections, errors, registrations).",
+        "dataSources": {
+          "performanceCounters": []
+        },
+        "destinations": {
+          "logAnalytics": [
+            {
+              "name": "workspace",
+              "workspaceResourceId": "[parameters('workspaceId')]"
+            }
+          ]
+        },
+        "dataFlows": []
+      }
+    }
+  ],
+  "outputs": {
+    "dcrVmId": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of the VM DCR."
+      },
+      "value": "[if(variables('isManagedOrAbove'), resourceId('Microsoft.Insights/dataCollectionRules', 'dcr-vm-managed-weu'), '')]"
+    },
+    "dcrStorageId": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of the Storage DCR."
+      },
+      "value": "[if(variables('isManagedOrAbove'), resourceId('Microsoft.Insights/dataCollectionRules', 'dcr-storage-managed-weu'), '')]"
+    },
+    "dcrRsvId": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of the RSV DCR."
+      },
+      "value": "[if(variables('isManagedOrAbove'), resourceId('Microsoft.Insights/dataCollectionRules', 'dcr-rsv-managed-weu'), '')]"
+    },
+    "dcrVpnId": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of the VPN Gateway DCR."
+      },
+      "value": "[if(variables('isManagedOrAbove'), resourceId('Microsoft.Insights/dataCollectionRules', 'dcr-vpngw-managed-weu'), '')]"
+    },
+    "dcrAvdId": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of the AVD DCR."
+      },
+      "value": "[if(variables('isAdvanced'), resourceId('Microsoft.Insights/dataCollectionRules', 'dcr-avd-advanced-weu'), '')]"
+    }
+  }
+}

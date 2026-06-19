@@ -1,0 +1,861 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.44.1.10279",
+      "templateHash": "8305137932360338178"
+    }
+  },
+  "parameters": {
+    "workspaceId": {
+      "type": "string",
+      "metadata": {
+        "description": "Full resource ID of the Log Analytics Workspace."
+      }
+    },
+    "targetResourceGroupId": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of the resource group being monitored (customer workload RG)."
+      }
+    },
+    "tier": {
+      "type": "string",
+      "allowedValues": [
+        "Essential",
+        "Managed",
+        "Advanced"
+      ],
+      "metadata": {
+        "description": "Deployment tier."
+      }
+    },
+    "location": {
+      "type": "string",
+      "allowedValues": [
+        "westeurope"
+      ],
+      "metadata": {
+        "description": "Azure region for deployment. Must be westeurope."
+      }
+    },
+    "actionGroupP1Id": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of the P1 Action Group."
+      }
+    },
+    "actionGroupP2Id": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of the P2 Action Group."
+      }
+    },
+    "actionGroupP3Id": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of the P3 Action Group."
+      }
+    },
+    "klantCode": {
+      "type": "string",
+      "metadata": {
+        "description": "Customer identifier code."
+      }
+    },
+    "tags": {
+      "type": "object",
+      "defaultValue": {},
+      "metadata": {
+        "description": "Resource tags to apply."
+      }
+    }
+  },
+  "variables": {
+    "isManagedOrAbove": "[not(equals(parameters('tier'), 'Essential'))]",
+    "isAdvanced": "[equals(parameters('tier'), 'Advanced')]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Insights/activityLogAlerts",
+      "apiVersion": "2020-10-01",
+      "name": "[format('alert-servicehealth-incident-{0}', parameters('klantCode'))]",
+      "location": "global",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "enabled": true,
+        "scopes": [
+          "[subscription().id]"
+        ],
+        "condition": {
+          "allOf": [
+            {
+              "field": "category",
+              "equals": "ServiceHealth"
+            },
+            {
+              "field": "properties.incidentType",
+              "containsAny": [
+                "Incident",
+                "ActionRequired"
+              ]
+            }
+          ]
+        },
+        "actions": {
+          "actionGroups": [
+            {
+              "actionGroupId": "[parameters('actionGroupP2Id')]"
+            }
+          ]
+        },
+        "description": "Fires on any Azure Service Health incident affecting the customer region or services."
+      }
+    },
+    {
+      "type": "Microsoft.Insights/activityLogAlerts",
+      "apiVersion": "2020-10-01",
+      "name": "[format('alert-resourcehealth-unavailable-{0}', parameters('klantCode'))]",
+      "location": "global",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "enabled": true,
+        "scopes": [
+          "[subscription().id]"
+        ],
+        "condition": {
+          "allOf": [
+            {
+              "field": "category",
+              "equals": "ResourceHealth"
+            },
+            {
+              "field": "properties.currentHealthStatus",
+              "equals": "Unavailable"
+            },
+            {
+              "field": "properties.previousHealthStatus",
+              "containsAny": [
+                "Available",
+                "Unknown"
+              ]
+            }
+          ]
+        },
+        "actions": {
+          "actionGroups": [
+            {
+              "actionGroupId": "[parameters('actionGroupP1Id')]"
+            }
+          ]
+        },
+        "description": "Fires when any resource transitions to Unavailable state (sustained > 5 min enforced by APR)."
+      }
+    },
+    {
+      "type": "Microsoft.Insights/activityLogAlerts",
+      "apiVersion": "2020-10-01",
+      "name": "[format('alert-resourcehealth-degraded-{0}', parameters('klantCode'))]",
+      "location": "global",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "enabled": true,
+        "scopes": [
+          "[subscription().id]"
+        ],
+        "condition": {
+          "allOf": [
+            {
+              "field": "category",
+              "equals": "ResourceHealth"
+            },
+            {
+              "field": "properties.currentHealthStatus",
+              "equals": "Degraded"
+            }
+          ]
+        },
+        "actions": {
+          "actionGroups": [
+            {
+              "actionGroupId": "[parameters('actionGroupP2Id')]"
+            }
+          ]
+        },
+        "description": "Fires when any resource transitions to Degraded state (sustained > 15 min)."
+      }
+    },
+    {
+      "condition": "[variables('isManagedOrAbove')]",
+      "type": "Microsoft.Insights/scheduledQueryRules",
+      "apiVersion": "2023-03-15-preview",
+      "name": "[format('alert-rsv-backup-failed-p2-{0}', parameters('klantCode'))]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "displayName": "[format('[{0}] RSV backup job failed (P2)', parameters('klantCode'))]",
+        "description": "Fires on first backup job failure for any protected item.",
+        "severity": 1,
+        "enabled": true,
+        "evaluationFrequency": "PT1H",
+        "windowSize": "PT1H",
+        "scopes": [
+          "[parameters('workspaceId')]"
+        ],
+        "criteria": {
+          "allOf": [
+            {
+              "query": "            AddonAzureBackupJobs\r\n            | where JobOperation == \"Backup\"\r\n            | where JobStatus == \"Failed\"\r\n          ",
+              "timeAggregation": "Count",
+              "operator": "GreaterThan",
+              "threshold": 0,
+              "failingPeriods": {
+                "numberOfEvaluationPeriods": 1,
+                "minFailingPeriodsToAlert": 1
+              }
+            }
+          ]
+        },
+        "actions": {
+          "actionGroups": [
+            "[parameters('actionGroupP2Id')]"
+          ]
+        }
+      }
+    },
+    {
+      "condition": "[variables('isManagedOrAbove')]",
+      "type": "Microsoft.Insights/scheduledQueryRules",
+      "apiVersion": "2023-03-15-preview",
+      "name": "[format('alert-rsv-backup-failed-p1-{0}', parameters('klantCode'))]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "displayName": "[format('[{0}] RSV backup job failed 2x consecutive (P1)', parameters('klantCode'))]",
+        "description": "Fires when the same protected item fails backup twice in a row.",
+        "severity": 0,
+        "enabled": true,
+        "evaluationFrequency": "PT1H",
+        "windowSize": "PT2H",
+        "scopes": [
+          "[parameters('workspaceId')]"
+        ],
+        "criteria": {
+          "allOf": [
+            {
+              "query": "            AddonAzureBackupJobs\r\n            | where JobOperation == \"Backup\"\r\n            | where JobStatus == \"Failed\"\r\n            | summarize Failures = count() by BackupItemUniqueId\r\n            | where Failures >= 2\r\n          ",
+              "timeAggregation": "Count",
+              "operator": "GreaterThan",
+              "threshold": 0,
+              "failingPeriods": {
+                "numberOfEvaluationPeriods": 1,
+                "minFailingPeriodsToAlert": 1
+              }
+            }
+          ]
+        },
+        "actions": {
+          "actionGroups": [
+            "[parameters('actionGroupP1Id')]"
+          ]
+        }
+      }
+    },
+    {
+      "condition": "[variables('isManagedOrAbove')]",
+      "type": "Microsoft.Insights/activityLogAlerts",
+      "apiVersion": "2020-10-01",
+      "name": "[format('alert-rsv-softdelete-changed-{0}', parameters('klantCode'))]",
+      "location": "global",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "enabled": true,
+        "scopes": [
+          "[subscription().id]"
+        ],
+        "condition": {
+          "allOf": [
+            {
+              "field": "category",
+              "equals": "Administrative"
+            },
+            {
+              "field": "operationName",
+              "containsAny": [
+                "Microsoft.RecoveryServices/vaults/backupconfig/write",
+                "Microsoft.RecoveryServices/vaults/write"
+              ]
+            },
+            {
+              "field": "status",
+              "equals": "Succeeded"
+            }
+          ]
+        },
+        "actions": {
+          "actionGroups": [
+            {
+              "actionGroupId": "[parameters('actionGroupP1Id')]"
+            }
+          ]
+        },
+        "description": "Fires when RSV soft delete or immutability settings are changed."
+      }
+    },
+    {
+      "condition": "[variables('isManagedOrAbove')]",
+      "type": "Microsoft.Insights/metricAlerts",
+      "apiVersion": "2018-03-01",
+      "name": "[format('alert-vpngw-tunnel-down-p1-{0}', parameters('klantCode'))]",
+      "location": "global",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "description": "VPN tunnel offline no redundant tunnel P1",
+        "severity": 0,
+        "enabled": true,
+        "evaluationFrequency": "PT1M",
+        "windowSize": "PT5M",
+        "scopes": [
+          "[parameters('targetResourceGroupId')]"
+        ],
+        "targetResourceType": "Microsoft.Network/virtualNetworkGateways",
+        "targetResourceRegion": "[parameters('location')]",
+        "criteria": {
+          "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
+          "allOf": [
+            {
+              "criterionType": "StaticThresholdCriterion",
+              "name": "tunnel-down",
+              "metricName": "TunnelConnectionCount",
+              "operator": "LessThan",
+              "threshold": 1,
+              "timeAggregation": "Total"
+            }
+          ]
+        },
+        "actions": [
+          {
+            "actionGroupId": "[parameters('actionGroupP1Id')]"
+          }
+        ]
+      }
+    },
+    {
+      "condition": "[variables('isManagedOrAbove')]",
+      "type": "Microsoft.Insights/metricAlerts",
+      "apiVersion": "2018-03-01",
+      "name": "[format('alert-vpngw-tunnel-down-p2-{0}', parameters('klantCode'))]",
+      "location": "global",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "description": "VPN tunnel offline redundant tunnel active P2",
+        "severity": 1,
+        "enabled": true,
+        "evaluationFrequency": "PT1M",
+        "windowSize": "PT5M",
+        "scopes": [
+          "[parameters('targetResourceGroupId')]"
+        ],
+        "targetResourceType": "Microsoft.Network/virtualNetworkGateways",
+        "targetResourceRegion": "[parameters('location')]",
+        "criteria": {
+          "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
+          "allOf": [
+            {
+              "criterionType": "StaticThresholdCriterion",
+              "name": "tunnel-partial-down",
+              "metricName": "TunnelConnectionCount",
+              "operator": "LessThan",
+              "threshold": 2,
+              "timeAggregation": "Total"
+            }
+          ]
+        },
+        "actions": [
+          {
+            "actionGroupId": "[parameters('actionGroupP2Id')]"
+          }
+        ]
+      }
+    },
+    {
+      "condition": "[variables('isManagedOrAbove')]",
+      "type": "Microsoft.Insights/metricAlerts",
+      "apiVersion": "2018-03-01",
+      "name": "[format('alert-vpngw-bandwidth-p3-{0}', parameters('klantCode'))]",
+      "location": "global",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "description": "VPN Gateway bandwidth high P3 dynamic threshold",
+        "severity": 2,
+        "enabled": true,
+        "evaluationFrequency": "PT15M",
+        "windowSize": "PT15M",
+        "scopes": [
+          "[parameters('targetResourceGroupId')]"
+        ],
+        "targetResourceType": "Microsoft.Network/virtualNetworkGateways",
+        "targetResourceRegion": "[parameters('location')]",
+        "criteria": {
+          "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
+          "allOf": [
+            {
+              "criterionType": "DynamicThresholdCriterion",
+              "name": "gateway-bandwidth",
+              "metricName": "AverageBandwidth",
+              "operator": "GreaterThan",
+              "alertSensitivity": "Medium",
+              "failingPeriods": {
+                "numberOfEvaluationPeriods": 3,
+                "minFailingPeriodsToAlert": 2
+              },
+              "timeAggregation": "Average"
+            }
+          ]
+        },
+        "actions": [
+          {
+            "actionGroupId": "[parameters('actionGroupP3Id')]"
+          }
+        ]
+      }
+    },
+    {
+      "condition": "[variables('isAdvanced')]",
+      "type": "Microsoft.Insights/scheduledQueryRules",
+      "apiVersion": "2023-03-15-preview",
+      "name": "[format('alert-avd-hosts-unavailable-p1-{0}', parameters('klantCode'))]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "displayName": "[format('[{0}] AVD session hosts unavailable (P1)', parameters('klantCode'))]",
+        "description": "Fires when more than 2 session hosts or > 25% of pool are unavailable.",
+        "severity": 0,
+        "enabled": true,
+        "evaluationFrequency": "PT5M",
+        "windowSize": "PT5M",
+        "scopes": [
+          "[parameters('workspaceId')]"
+        ],
+        "criteria": {
+          "allOf": [
+            {
+              "query": "            WVDErrors\r\n            | where TimeGenerated > ago(5m)\r\n            | where ServiceError == \"true\"\r\n            | summarize HostErrors = dcount(SessionHostName)\r\n            | where HostErrors > 2\r\n          ",
+              "timeAggregation": "Count",
+              "operator": "GreaterThan",
+              "threshold": 0,
+              "failingPeriods": {
+                "numberOfEvaluationPeriods": 1,
+                "minFailingPeriodsToAlert": 1
+              }
+            }
+          ]
+        },
+        "actions": {
+          "actionGroups": [
+            "[parameters('actionGroupP1Id')]"
+          ]
+        }
+      }
+    },
+    {
+      "condition": "[variables('isAdvanced')]",
+      "type": "Microsoft.Insights/scheduledQueryRules",
+      "apiVersion": "2023-03-15-preview",
+      "name": "[format('alert-avd-connection-errors-p2-{0}', parameters('klantCode'))]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "displayName": "[format('[{0}] AVD connection errors elevated (P2, dynamic)', parameters('klantCode'))]",
+        "description": "Fires when AVD connection errors exceed the dynamically learned baseline.",
+        "severity": 1,
+        "enabled": true,
+        "evaluationFrequency": "PT15M",
+        "windowSize": "PT15M",
+        "scopes": [
+          "[parameters('workspaceId')]"
+        ],
+        "criteria": {
+          "allOf": [
+            {
+              "query": "            WVDConnections\r\n            | where TimeGenerated > ago(15m)\r\n            | where State == \"Connected\"\r\n            | summarize Errors = countif(isnotempty(ClientSideIPAddress) == false)\r\n          ",
+              "timeAggregation": "Count",
+              "operator": "GreaterThan",
+              "threshold": 5,
+              "failingPeriods": {
+                "numberOfEvaluationPeriods": 2,
+                "minFailingPeriodsToAlert": 2
+              }
+            }
+          ]
+        },
+        "actions": {
+          "actionGroups": [
+            "[parameters('actionGroupP2Id')]"
+          ]
+        }
+      }
+    },
+    {
+      "condition": "[variables('isAdvanced')]",
+      "type": "Microsoft.Insights/scheduledQueryRules",
+      "apiVersion": "2023-03-15-preview",
+      "name": "[format('alert-avd-scaling-failed-p2-{0}', parameters('klantCode'))]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "displayName": "[format('[{0}] AVD autoscale action failed (P2)', parameters('klantCode'))]",
+        "description": "Fires when the AVD scaling plan fails to execute an autoscale action.",
+        "severity": 1,
+        "enabled": true,
+        "evaluationFrequency": "PT1H",
+        "windowSize": "PT1H",
+        "scopes": [
+          "[parameters('workspaceId')]"
+        ],
+        "criteria": {
+          "allOf": [
+            {
+              "query": "            WVDErrors\r\n            | where Source == \"ScalingPlan\"\r\n            | where ServiceError == \"true\"\r\n          ",
+              "timeAggregation": "Count",
+              "operator": "GreaterThan",
+              "threshold": 0,
+              "failingPeriods": {
+                "numberOfEvaluationPeriods": 1,
+                "minFailingPeriodsToAlert": 1
+              }
+            }
+          ]
+        },
+        "actions": {
+          "actionGroups": [
+            "[parameters('actionGroupP2Id')]"
+          ]
+        }
+      }
+    },
+    {
+      "condition": "[variables('isManagedOrAbove')]",
+      "type": "Microsoft.Insights/metricAlerts",
+      "apiVersion": "2018-03-01",
+      "name": "[format('alert-storage-availability-p1-{0}', parameters('klantCode'))]",
+      "location": "global",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "description": "Storage account availability below 99.9 percent over 5 minutes P1",
+        "severity": 0,
+        "enabled": true,
+        "evaluationFrequency": "PT1M",
+        "windowSize": "PT5M",
+        "scopes": [
+          "[parameters('targetResourceGroupId')]"
+        ],
+        "targetResourceType": "Microsoft.Storage/storageAccounts",
+        "targetResourceRegion": "[parameters('location')]",
+        "criteria": {
+          "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
+          "allOf": [
+            {
+              "criterionType": "StaticThresholdCriterion",
+              "name": "storage-availability",
+              "metricName": "Availability",
+              "operator": "LessThan",
+              "threshold": "[json('99.9')]",
+              "timeAggregation": "Average"
+            }
+          ]
+        },
+        "actions": [
+          {
+            "actionGroupId": "[parameters('actionGroupP1Id')]"
+          }
+        ]
+      }
+    },
+    {
+      "condition": "[variables('isManagedOrAbove')]",
+      "type": "Microsoft.Insights/metricAlerts",
+      "apiVersion": "2018-03-01",
+      "name": "[format('alert-storage-capacity-80-p3-{0}', parameters('klantCode'))]",
+      "location": "global",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "description": "Storage used capacity exceeds 80 percent of provisioned limit P3",
+        "severity": 2,
+        "enabled": true,
+        "evaluationFrequency": "PT1H",
+        "windowSize": "PT1H",
+        "scopes": [
+          "[parameters('targetResourceGroupId')]"
+        ],
+        "targetResourceType": "Microsoft.Storage/storageAccounts",
+        "targetResourceRegion": "[parameters('location')]",
+        "criteria": {
+          "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
+          "allOf": [
+            {
+              "criterionType": "StaticThresholdCriterion",
+              "name": "storage-capacity-80",
+              "metricName": "UsedCapacity",
+              "operator": "GreaterThan",
+              "threshold": 87960930222080,
+              "timeAggregation": "Average"
+            }
+          ]
+        },
+        "actions": [
+          {
+            "actionGroupId": "[parameters('actionGroupP3Id')]"
+          }
+        ]
+      }
+    },
+    {
+      "condition": "[variables('isManagedOrAbove')]",
+      "type": "Microsoft.Insights/metricAlerts",
+      "apiVersion": "2018-03-01",
+      "name": "[format('alert-storage-capacity-95-p2-{0}', parameters('klantCode'))]",
+      "location": "global",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "description": "Storage used capacity exceeds 95 percent of provisioned limit P2",
+        "severity": 1,
+        "enabled": true,
+        "evaluationFrequency": "PT1H",
+        "windowSize": "PT1H",
+        "scopes": [
+          "[parameters('targetResourceGroupId')]"
+        ],
+        "targetResourceType": "Microsoft.Storage/storageAccounts",
+        "targetResourceRegion": "[parameters('location')]",
+        "criteria": {
+          "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
+          "allOf": [
+            {
+              "criterionType": "StaticThresholdCriterion",
+              "name": "storage-capacity-95",
+              "metricName": "UsedCapacity",
+              "operator": "GreaterThan",
+              "threshold": 104549375664701,
+              "timeAggregation": "Average"
+            }
+          ]
+        },
+        "actions": [
+          {
+            "actionGroupId": "[parameters('actionGroupP2Id')]"
+          }
+        ]
+      }
+    },
+    {
+      "condition": "[variables('isAdvanced')]",
+      "type": "Microsoft.Insights/metricAlerts",
+      "apiVersion": "2018-03-01",
+      "name": "[format('alert-azurefiles-throttling-p2-{0}', parameters('klantCode'))]",
+      "location": "global",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "description": "Azure Files SuccessWithThrottling sustained more than 10 minutes P2",
+        "severity": 1,
+        "enabled": true,
+        "evaluationFrequency": "PT5M",
+        "windowSize": "PT10M",
+        "scopes": [
+          "[parameters('targetResourceGroupId')]"
+        ],
+        "targetResourceType": "Microsoft.Storage/storageAccounts/fileServices",
+        "targetResourceRegion": "[parameters('location')]",
+        "criteria": {
+          "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
+          "allOf": [
+            {
+              "criterionType": "StaticThresholdCriterion",
+              "name": "files-throttling",
+              "metricName": "Transactions",
+              "dimensions": [
+                {
+                  "name": "ResponseType",
+                  "operator": "Include",
+                  "values": [
+                    "SuccessWithThrottling"
+                  ]
+                }
+              ],
+              "operator": "GreaterThan",
+              "threshold": 0,
+              "timeAggregation": "Total"
+            }
+          ]
+        },
+        "actions": [
+          {
+            "actionGroupId": "[parameters('actionGroupP2Id')]"
+          }
+        ]
+      }
+    },
+    {
+      "condition": "[variables('isManagedOrAbove')]",
+      "type": "Microsoft.Insights/scheduledQueryRules",
+      "apiVersion": "2023-03-15-preview",
+      "name": "[format('alert-vm-heartbeat-p1-{0}', parameters('klantCode'))]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "displayName": "[format('[{0}] VM heartbeat lost > 5 min (P1)', parameters('klantCode'))]",
+        "description": "Fires when a VM stops sending heartbeat signals for more than 5 minutes.",
+        "severity": 0,
+        "enabled": true,
+        "evaluationFrequency": "PT5M",
+        "windowSize": "PT5M",
+        "scopes": [
+          "[parameters('workspaceId')]"
+        ],
+        "criteria": {
+          "allOf": [
+            {
+              "query": "            Heartbeat\r\n            | summarize LastHeartbeat = max(TimeGenerated) by Computer\r\n            | where LastHeartbeat < ago(5m)\r\n          ",
+              "timeAggregation": "Count",
+              "operator": "GreaterThan",
+              "threshold": 0,
+              "failingPeriods": {
+                "numberOfEvaluationPeriods": 1,
+                "minFailingPeriodsToAlert": 1
+              }
+            }
+          ]
+        },
+        "actions": {
+          "actionGroups": [
+            "[parameters('actionGroupP1Id')]"
+          ]
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Insights/activityLogAlerts",
+      "apiVersion": "2020-10-01",
+      "name": "[format('alert-activity-critical-change-p1-{0}', parameters('klantCode'))]",
+      "location": "global",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "enabled": true,
+        "scopes": [
+          "[subscription().id]"
+        ],
+        "condition": {
+          "allOf": [
+            {
+              "field": "category",
+              "equals": "Administrative"
+            },
+            {
+              "field": "operationName",
+              "containsAny": [
+                "Microsoft.Network/networkSecurityGroups/delete",
+                "Microsoft.Network/virtualNetworks/delete",
+                "Microsoft.RecoveryServices/vaults/delete",
+                "Microsoft.Compute/virtualMachines/delete",
+                "Microsoft.Network/virtualNetworkGateways/delete"
+              ]
+            },
+            {
+              "field": "status",
+              "equals": "Succeeded"
+            }
+          ]
+        },
+        "actions": {
+          "actionGroups": [
+            {
+              "actionGroupId": "[parameters('actionGroupP1Id')]"
+            }
+          ]
+        },
+        "description": "Fires when a critical resource (NSG, VNet, Vault, VM, VPN GW) is deleted."
+      }
+    },
+    {
+      "type": "Microsoft.Insights/activityLogAlerts",
+      "apiVersion": "2020-10-01",
+      "name": "[format('alert-activity-rbac-change-p2-{0}', parameters('klantCode'))]",
+      "location": "global",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "enabled": true,
+        "scopes": [
+          "[subscription().id]"
+        ],
+        "condition": {
+          "allOf": [
+            {
+              "field": "category",
+              "equals": "Administrative"
+            },
+            {
+              "field": "operationName",
+              "containsAny": [
+                "Microsoft.Authorization/roleAssignments/write",
+                "Microsoft.Authorization/roleAssignments/delete",
+                "Microsoft.Authorization/roleDefinitions/write",
+                "Microsoft.Authorization/roleDefinitions/delete"
+              ]
+            },
+            {
+              "field": "status",
+              "equals": "Succeeded"
+            }
+          ]
+        },
+        "actions": {
+          "actionGroups": [
+            {
+              "actionGroupId": "[parameters('actionGroupP2Id')]"
+            }
+          ]
+        },
+        "description": "Fires when any RBAC role assignment or definition is created or deleted at subscription level."
+      }
+    },
+    {
+      "type": "Microsoft.Insights/scheduledQueryRules",
+      "apiVersion": "2023-03-15-preview",
+      "name": "[format('alert-policy-noncompliant-p3-{0}', parameters('klantCode'))]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "displayName": "[format('[{0}] New non-compliant resource detected (P3)', parameters('klantCode'))]",
+        "description": "Fires when Azure Policy detects a new non-compliant resource in the baseline policy set. Escalate to P2 for security category policies.",
+        "severity": 2,
+        "enabled": true,
+        "evaluationFrequency": "PT1H",
+        "windowSize": "PT1H",
+        "scopes": [
+          "[parameters('workspaceId')]"
+        ],
+        "criteria": {
+          "allOf": [
+            {
+              "query": "            AzureActivity\r\n            | where CategoryValue == \"Policy\"\r\n            | where ActivityStatusValue == \"Start\"\r\n            | where Properties has \"NonCompliant\"\r\n          ",
+              "timeAggregation": "Count",
+              "operator": "GreaterThan",
+              "threshold": 0,
+              "failingPeriods": {
+                "numberOfEvaluationPeriods": 1,
+                "minFailingPeriodsToAlert": 1
+              }
+            }
+          ]
+        },
+        "actions": {
+          "actionGroups": [
+            "[parameters('actionGroupP3Id')]"
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,2475 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "languageVersion": "2.0",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.44.1.10279",
+      "templateHash": "13756553616946206368"
+    }
+  },
+  "parameters": {
+    "klantCode": {
+      "type": "string",
+      "metadata": {
+        "description": "Customer identifier code (lowercase, max 8 chars)."
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "westeurope",
+      "allowedValues": [
+        "westeurope"
+      ],
+      "metadata": {
+        "description": "Azure region for all resources. Must be westeurope for naming convention compliance (weu suffix)."
+      }
+    },
+    "tier": {
+      "type": "string",
+      "allowedValues": [
+        "Essential",
+        "Managed",
+        "Advanced"
+      ],
+      "metadata": {
+        "description": "Monitoring tier: Essential / Managed / Advanced."
+      }
+    },
+    "monitoredResourceGroupId": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of the customer workload resource group to monitor."
+      }
+    },
+    "budgetAmountEur": {
+      "type": "int",
+      "defaultValue": 25,
+      "minValue": 1,
+      "metadata": {
+        "description": "Monthly monitoring budget in EUR."
+      }
+    },
+    "onCallEmail": {
+      "type": "string",
+      "metadata": {
+        "description": "On-call email address (receives P1 alerts)."
+      }
+    },
+    "reportingEmail": {
+      "type": "string",
+      "metadata": {
+        "description": "Reporting email address (receives P3 alerts)."
+      }
+    },
+    "monitoringReaderGroupId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Entra group Object ID for Monitoring Reader (Lighthouse). Leave empty to skip Lighthouse."
+      }
+    },
+    "monitoringContributorGroupId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Entra group Object ID for Monitoring Contributor (Lighthouse). Leave empty to skip Lighthouse."
+      }
+    },
+    "managingTenantId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "IT Synergy managing tenant ID (Lighthouse). Leave empty to skip Lighthouse."
+      }
+    },
+    "maintenanceWindowDayOfWeek": {
+      "type": "string",
+      "defaultValue": "Sunday",
+      "allowedValues": [
+        "Sunday",
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday"
+      ],
+      "metadata": {
+        "description": "Day of week for maintenance window alert suppression."
+      }
+    },
+    "maintenanceWindowStart": {
+      "type": "string",
+      "defaultValue": "02:00",
+      "metadata": {
+        "description": "Maintenance window start time (HH:mm UTC)."
+      }
+    },
+    "maintenanceWindowEnd": {
+      "type": "string",
+      "defaultValue": "06:00",
+      "metadata": {
+        "description": "Maintenance window end time (HH:mm UTC)."
+      }
+    }
+  },
+  "variables": {
+    "deployLighthouse": "[and(and(not(empty(parameters('monitoringReaderGroupId'))), not(empty(parameters('monitoringContributorGroupId')))), not(empty(parameters('managingTenantId'))))]",
+    "commonTags": {
+      "Environment": "monitoring",
+      "ManagedBy": "platform-team",
+      "KlantCode": "[parameters('klantCode')]",
+      "Tier": "[parameters('tier')]",
+      "baseline-version": "0.1-pilot"
+    },
+    "monitoredSubId": "[split(parameters('monitoredResourceGroupId'), '/')[2]]",
+    "monitoredRgName": "[split(parameters('monitoredResourceGroupId'), '/')[4]]"
+  },
+  "resources": {
+    "law": {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('deploy-law-{0}', parameters('klantCode'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "klantCode": {
+            "value": "[parameters('klantCode')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "tags": {
+            "value": "[variables('commonTags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.44.1.10279",
+              "templateHash": "12408673081095361450"
+            }
+          },
+          "parameters": {
+            "klantCode": {
+              "type": "string",
+              "metadata": {
+                "description": "Customer identifier code (lowercase, max 8 chars)."
+              }
+            },
+            "location": {
+              "type": "string",
+              "allowedValues": [
+                "westeurope"
+              ],
+              "metadata": {
+                "description": "Azure region for deployment. Must be westeurope."
+              }
+            },
+            "retentionDays": {
+              "type": "int",
+              "defaultValue": 30,
+              "minValue": 30,
+              "maxValue": 730,
+              "metadata": {
+                "description": "Interactive retention period in days."
+              }
+            },
+            "dailyCapGb": {
+              "type": "int",
+              "defaultValue": 1,
+              "minValue": 1,
+              "metadata": {
+                "description": "Daily ingestion cap in GB. Set after Phase 1 calibration."
+              }
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Resource tags to apply."
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.OperationalInsights/workspaces",
+              "apiVersion": "2023-09-01",
+              "name": "[format('log-{0}-platform-weu', parameters('klantCode'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "sku": {
+                  "name": "PerGB2018"
+                },
+                "retentionInDays": "[parameters('retentionDays')]",
+                "workspaceCapping": {
+                  "dailyQuotaGb": "[parameters('dailyCapGb')]"
+                },
+                "features": {
+                  "enableLogAccessUsingOnlyResourcePermissions": true
+                },
+                "publicNetworkAccessForIngestion": "Enabled",
+                "publicNetworkAccessForQuery": "Enabled"
+              }
+            },
+            {
+              "type": "Microsoft.Insights/scheduledQueryRules",
+              "apiVersion": "2023-03-15-preview",
+              "name": "[format('alert-law-daily-cap-warning-{0}', parameters('klantCode'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "displayName": "[format('[{0}] Log Analytics daily cap at 80%', parameters('klantCode'))]",
+                "description": "Fires when the workspace is approaching the daily ingestion cap. Investigate data sources before the cap is hit and logs stop flowing.",
+                "severity": 2,
+                "enabled": true,
+                "evaluationFrequency": "PT1H",
+                "windowSize": "PT1H",
+                "scopes": [
+                  "[resourceId('Microsoft.OperationalInsights/workspaces', format('log-{0}-platform-weu', parameters('klantCode')))]"
+                ],
+                "criteria": {
+                  "allOf": [
+                    {
+                      "query": "            Usage\r\n            | where TimeGenerated > ago(1d)\r\n            | summarize IngestedGB = sum(Quantity) / 1000\r\n            | where IngestedGB >= ${dailyCapGb} * 0.8\r\n          ",
+                      "timeAggregation": "Count",
+                      "operator": "GreaterThanOrEqual",
+                      "threshold": 1,
+                      "failingPeriods": {
+                        "numberOfEvaluationPeriods": 1,
+                        "minFailingPeriodsToAlert": 1
+                      }
+                    }
+                  ]
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.OperationalInsights/workspaces', format('log-{0}-platform-weu', parameters('klantCode')))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "workspaceId": {
+              "type": "string",
+              "metadata": {
+                "description": "Full resource ID of the Log Analytics Workspace."
+              },
+              "value": "[resourceId('Microsoft.OperationalInsights/workspaces', format('log-{0}-platform-weu', parameters('klantCode')))]"
+            },
+            "workspaceCustomerId": {
+              "type": "string",
+              "metadata": {
+                "description": "Log Analytics Workspace ID (customer / workspace GUID)."
+              },
+              "value": "[reference(resourceId('Microsoft.OperationalInsights/workspaces', format('log-{0}-platform-weu', parameters('klantCode'))), '2023-09-01').customerId]"
+            },
+            "workspaceName": {
+              "type": "string",
+              "metadata": {
+                "description": "Log Analytics Workspace name."
+              },
+              "value": "[format('log-{0}-platform-weu', parameters('klantCode'))]"
+            }
+          }
+        }
+      }
+    },
+    "dcr": {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('deploy-dcr-{0}', parameters('klantCode'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "workspaceId": {
+            "value": "[reference('law').outputs.workspaceId.value]"
+          },
+          "tier": {
+            "value": "[parameters('tier')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "tags": {
+            "value": "[variables('commonTags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.44.1.10279",
+              "templateHash": "1998472236588199761"
+            }
+          },
+          "parameters": {
+            "workspaceId": {
+              "type": "string",
+              "metadata": {
+                "description": "Full resource ID of the Log Analytics Workspace."
+              }
+            },
+            "tier": {
+              "type": "string",
+              "allowedValues": [
+                "Essential",
+                "Managed",
+                "Advanced"
+              ],
+              "metadata": {
+                "description": "Deployment tier. Determines which DCRs are deployed."
+              }
+            },
+            "location": {
+              "type": "string",
+              "allowedValues": [
+                "westeurope"
+              ],
+              "metadata": {
+                "description": "Azure region for deployment. Must be westeurope."
+              }
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Resource tags to apply."
+              }
+            }
+          },
+          "variables": {
+            "isManagedOrAbove": "[not(equals(parameters('tier'), 'Essential'))]",
+            "isAdvanced": "[equals(parameters('tier'), 'Advanced')]"
+          },
+          "resources": [
+            {
+              "condition": "[variables('isManagedOrAbove')]",
+              "type": "Microsoft.Insights/dataCollectionRules",
+              "apiVersion": "2023-03-11",
+              "name": "dcr-vm-managed-weu",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "description": "Collect VM performance counters and Windows Event Logs.",
+                "dataSources": {
+                  "performanceCounters": [
+                    {
+                      "name": "VMInsightsPerf",
+                      "streams": [
+                        "Microsoft-InsightsMetrics"
+                      ],
+                      "samplingFrequencyInSeconds": 60,
+                      "counterSpecifiers": [
+                        "\\Processor Information(_Total)\\% Processor Time",
+                        "\\Memory\\Available Bytes",
+                        "\\LogicalDisk(_Total)\\% Disk Time",
+                        "\\LogicalDisk(_Total)\\Disk Reads/sec",
+                        "\\LogicalDisk(_Total)\\Disk Writes/sec",
+                        "\\Network Interface(*)\\Bytes Total/sec"
+                      ]
+                    }
+                  ],
+                  "windowsEventLogs": [
+                    {
+                      "name": "WindowsEventLogs",
+                      "streams": [
+                        "Microsoft-Event"
+                      ],
+                      "xPathQueries": [
+                        "Application!*[System[(Level=1 or Level=2 or Level=3)]]",
+                        "System!*[System[(Level=1 or Level=2 or Level=3)]]"
+                      ]
+                    }
+                  ]
+                },
+                "destinations": {
+                  "logAnalytics": [
+                    {
+                      "name": "workspace",
+                      "workspaceResourceId": "[parameters('workspaceId')]"
+                    }
+                  ]
+                },
+                "dataFlows": [
+                  {
+                    "streams": [
+                      "Microsoft-InsightsMetrics"
+                    ],
+                    "destinations": [
+                      "workspace"
+                    ]
+                  },
+                  {
+                    "streams": [
+                      "Microsoft-Event"
+                    ],
+                    "destinations": [
+                      "workspace"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "condition": "[variables('isManagedOrAbove')]",
+              "type": "Microsoft.Insights/dataCollectionRules",
+              "apiVersion": "2023-03-11",
+              "name": "dcr-storage-managed-weu",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "description": "Collect Storage account capacity and transaction metrics.",
+                "dataSources": {
+                  "performanceCounters": []
+                },
+                "destinations": {
+                  "logAnalytics": [
+                    {
+                      "name": "workspace",
+                      "workspaceResourceId": "[parameters('workspaceId')]"
+                    }
+                  ]
+                },
+                "dataFlows": []
+              }
+            },
+            {
+              "condition": "[variables('isManagedOrAbove')]",
+              "type": "Microsoft.Insights/dataCollectionRules",
+              "apiVersion": "2023-03-11",
+              "name": "dcr-rsv-managed-weu",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "description": "Collect Recovery Services Vault backup diagnostic data (AzureBackupReport).",
+                "dataSources": {
+                  "performanceCounters": []
+                },
+                "destinations": {
+                  "logAnalytics": [
+                    {
+                      "name": "workspace",
+                      "workspaceResourceId": "[parameters('workspaceId')]"
+                    }
+                  ]
+                },
+                "dataFlows": []
+              }
+            },
+            {
+              "condition": "[variables('isManagedOrAbove')]",
+              "type": "Microsoft.Insights/dataCollectionRules",
+              "apiVersion": "2023-03-11",
+              "name": "dcr-vpngw-managed-weu",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "description": "Collect VPN Gateway diagnostic logs (Gateway + Tunnel).",
+                "dataSources": {
+                  "performanceCounters": []
+                },
+                "destinations": {
+                  "logAnalytics": [
+                    {
+                      "name": "workspace",
+                      "workspaceResourceId": "[parameters('workspaceId')]"
+                    }
+                  ]
+                },
+                "dataFlows": []
+              }
+            },
+            {
+              "condition": "[variables('isAdvanced')]",
+              "type": "Microsoft.Insights/dataCollectionRules",
+              "apiVersion": "2023-03-11",
+              "name": "dcr-avd-advanced-weu",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "description": "Collect AVD host pool diagnostic data (connections, errors, registrations).",
+                "dataSources": {
+                  "performanceCounters": []
+                },
+                "destinations": {
+                  "logAnalytics": [
+                    {
+                      "name": "workspace",
+                      "workspaceResourceId": "[parameters('workspaceId')]"
+                    }
+                  ]
+                },
+                "dataFlows": []
+              }
+            }
+          ],
+          "outputs": {
+            "dcrVmId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the VM DCR."
+              },
+              "value": "[if(variables('isManagedOrAbove'), resourceId('Microsoft.Insights/dataCollectionRules', 'dcr-vm-managed-weu'), '')]"
+            },
+            "dcrStorageId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the Storage DCR."
+              },
+              "value": "[if(variables('isManagedOrAbove'), resourceId('Microsoft.Insights/dataCollectionRules', 'dcr-storage-managed-weu'), '')]"
+            },
+            "dcrRsvId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the RSV DCR."
+              },
+              "value": "[if(variables('isManagedOrAbove'), resourceId('Microsoft.Insights/dataCollectionRules', 'dcr-rsv-managed-weu'), '')]"
+            },
+            "dcrVpnId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the VPN Gateway DCR."
+              },
+              "value": "[if(variables('isManagedOrAbove'), resourceId('Microsoft.Insights/dataCollectionRules', 'dcr-vpngw-managed-weu'), '')]"
+            },
+            "dcrAvdId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the AVD DCR."
+              },
+              "value": "[if(variables('isAdvanced'), resourceId('Microsoft.Insights/dataCollectionRules', 'dcr-avd-advanced-weu'), '')]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "law"
+      ]
+    },
+    "logicApp": {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('deploy-logicapp-{0}', parameters('klantCode'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "workspaceId": {
+            "value": "[reference('law').outputs.workspaceId.value]"
+          },
+          "workspaceCustomerId": {
+            "value": "[reference('law').outputs.workspaceCustomerId.value]"
+          },
+          "klantCode": {
+            "value": "[parameters('klantCode')]"
+          },
+          "tags": {
+            "value": "[variables('commonTags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "languageVersion": "2.0",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.44.1.10279",
+              "templateHash": "13038460596132415768"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string",
+              "allowedValues": [
+                "westeurope"
+              ],
+              "metadata": {
+                "description": "Azure region for deployment. Must be westeurope."
+              }
+            },
+            "workspaceId": {
+              "type": "string",
+              "metadata": {
+                "description": "Full resource ID of the Log Analytics Workspace (reserved for Phase 2 direct query)."
+              }
+            },
+            "workspaceCustomerId": {
+              "type": "string",
+              "metadata": {
+                "description": "Workspace Customer ID (GUID) for Data Collector API."
+              }
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Resource tags to apply."
+              }
+            },
+            "klantCode": {
+              "type": "string",
+              "metadata": {
+                "description": "Customer identifier code."
+              }
+            }
+          },
+          "resources": {
+            "logicApp": {
+              "type": "Microsoft.Logic/workflows",
+              "apiVersion": "2019-05-01",
+              "name": "logic-autotask-monitoring-weu",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "identity": {
+                "type": "SystemAssigned"
+              },
+              "properties": {
+                "state": "Enabled",
+                "definition": {
+                  "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+                  "contentVersion": "1.0.0.0",
+                  "parameters": {
+                    "workspaceId": {
+                      "type": "string",
+                      "defaultValue": "[parameters('workspaceCustomerId')]"
+                    }
+                  },
+                  "triggers": {
+                    "http_trigger": {
+                      "type": "Request",
+                      "kind": "Http",
+                      "inputs": {
+                        "schema": {}
+                      }
+                    }
+                  },
+                  "actions": {
+                    "Parse_Alert_Payload": {
+                      "type": "ParseJson",
+                      "inputs": {
+                        "content": "@triggerBody()",
+                        "schema": {
+                          "type": "object",
+                          "properties": {
+                            "data": {
+                              "type": "object",
+                              "properties": {
+                                "essentials": {
+                                  "type": "object",
+                                  "properties": {
+                                    "severity": {
+                                      "type": "string"
+                                    },
+                                    "alertTargetIDs": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "alertRule": {
+                                      "type": "string"
+                                    },
+                                    "firedDateTime": {
+                                      "type": "string"
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "runAfter": {}
+                    },
+                    "Log_To_Workspace": {
+                      "type": "Http",
+                      "inputs": {
+                        "method": "POST",
+                        "uri": "https://api.loganalytics.io/v1/workspaces/@{parameters('workspaceId')}/query",
+                        "body": "@triggerBody()"
+                      },
+                      "runAfter": {
+                        "Parse_Alert_Payload": [
+                          "Succeeded"
+                        ]
+                      }
+                    },
+                    "Return_200": {
+                      "type": "Response",
+                      "inputs": {
+                        "statusCode": 200,
+                        "body": {
+                          "status": "logged",
+                          "phase": "Phase1-ObservationMode",
+                          "klantCode": "[parameters('klantCode')]"
+                        }
+                      },
+                      "runAfter": {
+                        "Log_To_Workspace": [
+                          "Succeeded",
+                          "Failed"
+                        ]
+                      }
+                    }
+                  },
+                  "outputs": {}
+                }
+              }
+            }
+          },
+          "outputs": {
+            "logicAppWebhookUri": {
+              "type": "securestring",
+              "metadata": {
+                "description": "HTTPS trigger URL for the Logic App. Pass this to action-groups.bicep."
+              },
+              "value": "[listCallbackUrl(format('{0}/triggers/http_trigger', resourceId('Microsoft.Logic/workflows', 'logic-autotask-monitoring-weu')), '2019-05-01').value]"
+            },
+            "logicAppId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the Logic App."
+              },
+              "value": "[resourceId('Microsoft.Logic/workflows', 'logic-autotask-monitoring-weu')]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "law"
+      ]
+    },
+    "actionGroups": {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('deploy-ag-{0}', parameters('klantCode'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "logicAppWebhookUri": {
+            "value": "[listOutputsWithSecureValues('logicApp', '2025-04-01').logicAppWebhookUri]"
+          },
+          "onCallEmail": {
+            "value": "[parameters('onCallEmail')]"
+          },
+          "reportingEmail": {
+            "value": "[parameters('reportingEmail')]"
+          },
+          "tags": {
+            "value": "[variables('commonTags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.44.1.10279",
+              "templateHash": "4908330287997182753"
+            }
+          },
+          "parameters": {
+            "logicAppWebhookUri": {
+              "type": "string",
+              "metadata": {
+                "description": "HTTPS webhook URI of the Autotask Logic App."
+              }
+            },
+            "onCallEmail": {
+              "type": "string",
+              "metadata": {
+                "description": "Email address of the on-call engineer (receives P1 alerts)."
+              }
+            },
+            "reportingEmail": {
+              "type": "string",
+              "metadata": {
+                "description": "Email address for reporting (receives P3 alerts)."
+              }
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Resource tags to apply."
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Insights/actionGroups",
+              "apiVersion": "2023-01-01",
+              "name": "ag-monitoring-p1-weu",
+              "location": "global",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "groupShortName": "mon-p1",
+                "enabled": true,
+                "webhookReceivers": [
+                  {
+                    "name": "autotask-webhook-p1",
+                    "serviceUri": "[parameters('logicAppWebhookUri')]",
+                    "useCommonAlertSchema": true
+                  }
+                ],
+                "emailReceivers": [
+                  {
+                    "name": "oncall-p1",
+                    "emailAddress": "[parameters('onCallEmail')]",
+                    "useCommonAlertSchema": true
+                  }
+                ]
+              }
+            },
+            {
+              "type": "Microsoft.Insights/actionGroups",
+              "apiVersion": "2023-01-01",
+              "name": "ag-monitoring-p2-weu",
+              "location": "global",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "groupShortName": "mon-p2",
+                "enabled": true,
+                "webhookReceivers": [
+                  {
+                    "name": "autotask-webhook-p2",
+                    "serviceUri": "[parameters('logicAppWebhookUri')]",
+                    "useCommonAlertSchema": true
+                  }
+                ]
+              }
+            },
+            {
+              "type": "Microsoft.Insights/actionGroups",
+              "apiVersion": "2023-01-01",
+              "name": "ag-monitoring-p3-weu",
+              "location": "global",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "groupShortName": "mon-p3",
+                "enabled": true,
+                "emailReceivers": [
+                  {
+                    "name": "reporting-p3",
+                    "emailAddress": "[parameters('reportingEmail')]",
+                    "useCommonAlertSchema": true
+                  }
+                ]
+              }
+            }
+          ],
+          "outputs": {
+            "actionGroupP1Id": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the P1 Action Group."
+              },
+              "value": "[resourceId('Microsoft.Insights/actionGroups', 'ag-monitoring-p1-weu')]"
+            },
+            "actionGroupP2Id": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the P2 Action Group."
+              },
+              "value": "[resourceId('Microsoft.Insights/actionGroups', 'ag-monitoring-p2-weu')]"
+            },
+            "actionGroupP3Id": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the P3 Action Group."
+              },
+              "value": "[resourceId('Microsoft.Insights/actionGroups', 'ag-monitoring-p3-weu')]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "logicApp"
+      ]
+    },
+    "alertRules": {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('deploy-alert-rules-{0}', parameters('klantCode'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "workspaceId": {
+            "value": "[reference('law').outputs.workspaceId.value]"
+          },
+          "targetResourceGroupId": {
+            "value": "[parameters('monitoredResourceGroupId')]"
+          },
+          "tier": {
+            "value": "[parameters('tier')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "actionGroupP1Id": {
+            "value": "[reference('actionGroups').outputs.actionGroupP1Id.value]"
+          },
+          "actionGroupP2Id": {
+            "value": "[reference('actionGroups').outputs.actionGroupP2Id.value]"
+          },
+          "actionGroupP3Id": {
+            "value": "[reference('actionGroups').outputs.actionGroupP3Id.value]"
+          },
+          "klantCode": {
+            "value": "[parameters('klantCode')]"
+          },
+          "tags": {
+            "value": "[variables('commonTags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.44.1.10279",
+              "templateHash": "8305137932360338178"
+            }
+          },
+          "parameters": {
+            "workspaceId": {
+              "type": "string",
+              "metadata": {
+                "description": "Full resource ID of the Log Analytics Workspace."
+              }
+            },
+            "targetResourceGroupId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the resource group being monitored (customer workload RG)."
+              }
+            },
+            "tier": {
+              "type": "string",
+              "allowedValues": [
+                "Essential",
+                "Managed",
+                "Advanced"
+              ],
+              "metadata": {
+                "description": "Deployment tier."
+              }
+            },
+            "location": {
+              "type": "string",
+              "allowedValues": [
+                "westeurope"
+              ],
+              "metadata": {
+                "description": "Azure region for deployment. Must be westeurope."
+              }
+            },
+            "actionGroupP1Id": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the P1 Action Group."
+              }
+            },
+            "actionGroupP2Id": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the P2 Action Group."
+              }
+            },
+            "actionGroupP3Id": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the P3 Action Group."
+              }
+            },
+            "klantCode": {
+              "type": "string",
+              "metadata": {
+                "description": "Customer identifier code."
+              }
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Resource tags to apply."
+              }
+            }
+          },
+          "variables": {
+            "isManagedOrAbove": "[not(equals(parameters('tier'), 'Essential'))]",
+            "isAdvanced": "[equals(parameters('tier'), 'Advanced')]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Insights/activityLogAlerts",
+              "apiVersion": "2020-10-01",
+              "name": "[format('alert-servicehealth-incident-{0}', parameters('klantCode'))]",
+              "location": "global",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "enabled": true,
+                "scopes": [
+                  "[subscription().id]"
+                ],
+                "condition": {
+                  "allOf": [
+                    {
+                      "field": "category",
+                      "equals": "ServiceHealth"
+                    },
+                    {
+                      "field": "properties.incidentType",
+                      "containsAny": [
+                        "Incident",
+                        "ActionRequired"
+                      ]
+                    }
+                  ]
+                },
+                "actions": {
+                  "actionGroups": [
+                    {
+                      "actionGroupId": "[parameters('actionGroupP2Id')]"
+                    }
+                  ]
+                },
+                "description": "Fires on any Azure Service Health incident affecting the customer region or services."
+              }
+            },
+            {
+              "type": "Microsoft.Insights/activityLogAlerts",
+              "apiVersion": "2020-10-01",
+              "name": "[format('alert-resourcehealth-unavailable-{0}', parameters('klantCode'))]",
+              "location": "global",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "enabled": true,
+                "scopes": [
+                  "[subscription().id]"
+                ],
+                "condition": {
+                  "allOf": [
+                    {
+                      "field": "category",
+                      "equals": "ResourceHealth"
+                    },
+                    {
+                      "field": "properties.currentHealthStatus",
+                      "equals": "Unavailable"
+                    },
+                    {
+                      "field": "properties.previousHealthStatus",
+                      "containsAny": [
+                        "Available",
+                        "Unknown"
+                      ]
+                    }
+                  ]
+                },
+                "actions": {
+                  "actionGroups": [
+                    {
+                      "actionGroupId": "[parameters('actionGroupP1Id')]"
+                    }
+                  ]
+                },
+                "description": "Fires when any resource transitions to Unavailable state (sustained > 5 min enforced by APR)."
+              }
+            },
+            {
+              "type": "Microsoft.Insights/activityLogAlerts",
+              "apiVersion": "2020-10-01",
+              "name": "[format('alert-resourcehealth-degraded-{0}', parameters('klantCode'))]",
+              "location": "global",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "enabled": true,
+                "scopes": [
+                  "[subscription().id]"
+                ],
+                "condition": {
+                  "allOf": [
+                    {
+                      "field": "category",
+                      "equals": "ResourceHealth"
+                    },
+                    {
+                      "field": "properties.currentHealthStatus",
+                      "equals": "Degraded"
+                    }
+                  ]
+                },
+                "actions": {
+                  "actionGroups": [
+                    {
+                      "actionGroupId": "[parameters('actionGroupP2Id')]"
+                    }
+                  ]
+                },
+                "description": "Fires when any resource transitions to Degraded state (sustained > 15 min)."
+              }
+            },
+            {
+              "condition": "[variables('isManagedOrAbove')]",
+              "type": "Microsoft.Insights/scheduledQueryRules",
+              "apiVersion": "2023-03-15-preview",
+              "name": "[format('alert-rsv-backup-failed-p2-{0}', parameters('klantCode'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "displayName": "[format('[{0}] RSV backup job failed (P2)', parameters('klantCode'))]",
+                "description": "Fires on first backup job failure for any protected item.",
+                "severity": 1,
+                "enabled": true,
+                "evaluationFrequency": "PT1H",
+                "windowSize": "PT1H",
+                "scopes": [
+                  "[parameters('workspaceId')]"
+                ],
+                "criteria": {
+                  "allOf": [
+                    {
+                      "query": "            AddonAzureBackupJobs\r\n            | where JobOperation == \"Backup\"\r\n            | where JobStatus == \"Failed\"\r\n          ",
+                      "timeAggregation": "Count",
+                      "operator": "GreaterThan",
+                      "threshold": 0,
+                      "failingPeriods": {
+                        "numberOfEvaluationPeriods": 1,
+                        "minFailingPeriodsToAlert": 1
+                      }
+                    }
+                  ]
+                },
+                "actions": {
+                  "actionGroups": [
+                    "[parameters('actionGroupP2Id')]"
+                  ]
+                }
+              }
+            },
+            {
+              "condition": "[variables('isManagedOrAbove')]",
+              "type": "Microsoft.Insights/scheduledQueryRules",
+              "apiVersion": "2023-03-15-preview",
+              "name": "[format('alert-rsv-backup-failed-p1-{0}', parameters('klantCode'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "displayName": "[format('[{0}] RSV backup job failed 2x consecutive (P1)', parameters('klantCode'))]",
+                "description": "Fires when the same protected item fails backup twice in a row.",
+                "severity": 0,
+                "enabled": true,
+                "evaluationFrequency": "PT1H",
+                "windowSize": "PT2H",
+                "scopes": [
+                  "[parameters('workspaceId')]"
+                ],
+                "criteria": {
+                  "allOf": [
+                    {
+                      "query": "            AddonAzureBackupJobs\r\n            | where JobOperation == \"Backup\"\r\n            | where JobStatus == \"Failed\"\r\n            | summarize Failures = count() by BackupItemUniqueId\r\n            | where Failures >= 2\r\n          ",
+                      "timeAggregation": "Count",
+                      "operator": "GreaterThan",
+                      "threshold": 0,
+                      "failingPeriods": {
+                        "numberOfEvaluationPeriods": 1,
+                        "minFailingPeriodsToAlert": 1
+                      }
+                    }
+                  ]
+                },
+                "actions": {
+                  "actionGroups": [
+                    "[parameters('actionGroupP1Id')]"
+                  ]
+                }
+              }
+            },
+            {
+              "condition": "[variables('isManagedOrAbove')]",
+              "type": "Microsoft.Insights/activityLogAlerts",
+              "apiVersion": "2020-10-01",
+              "name": "[format('alert-rsv-softdelete-changed-{0}', parameters('klantCode'))]",
+              "location": "global",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "enabled": true,
+                "scopes": [
+                  "[subscription().id]"
+                ],
+                "condition": {
+                  "allOf": [
+                    {
+                      "field": "category",
+                      "equals": "Administrative"
+                    },
+                    {
+                      "field": "operationName",
+                      "containsAny": [
+                        "Microsoft.RecoveryServices/vaults/backupconfig/write",
+                        "Microsoft.RecoveryServices/vaults/write"
+                      ]
+                    },
+                    {
+                      "field": "status",
+                      "equals": "Succeeded"
+                    }
+                  ]
+                },
+                "actions": {
+                  "actionGroups": [
+                    {
+                      "actionGroupId": "[parameters('actionGroupP1Id')]"
+                    }
+                  ]
+                },
+                "description": "Fires when RSV soft delete or immutability settings are changed."
+              }
+            },
+            {
+              "condition": "[variables('isManagedOrAbove')]",
+              "type": "Microsoft.Insights/metricAlerts",
+              "apiVersion": "2018-03-01",
+              "name": "[format('alert-vpngw-tunnel-down-p1-{0}', parameters('klantCode'))]",
+              "location": "global",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "description": "VPN tunnel offline no redundant tunnel P1",
+                "severity": 0,
+                "enabled": true,
+                "evaluationFrequency": "PT1M",
+                "windowSize": "PT5M",
+                "scopes": [
+                  "[parameters('targetResourceGroupId')]"
+                ],
+                "targetResourceType": "Microsoft.Network/virtualNetworkGateways",
+                "targetResourceRegion": "[parameters('location')]",
+                "criteria": {
+                  "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
+                  "allOf": [
+                    {
+                      "criterionType": "StaticThresholdCriterion",
+                      "name": "tunnel-down",
+                      "metricName": "TunnelConnectionCount",
+                      "operator": "LessThan",
+                      "threshold": 1,
+                      "timeAggregation": "Total"
+                    }
+                  ]
+                },
+                "actions": [
+                  {
+                    "actionGroupId": "[parameters('actionGroupP1Id')]"
+                  }
+                ]
+              }
+            },
+            {
+              "condition": "[variables('isManagedOrAbove')]",
+              "type": "Microsoft.Insights/metricAlerts",
+              "apiVersion": "2018-03-01",
+              "name": "[format('alert-vpngw-tunnel-down-p2-{0}', parameters('klantCode'))]",
+              "location": "global",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "description": "VPN tunnel offline redundant tunnel active P2",
+                "severity": 1,
+                "enabled": true,
+                "evaluationFrequency": "PT1M",
+                "windowSize": "PT5M",
+                "scopes": [
+                  "[parameters('targetResourceGroupId')]"
+                ],
+                "targetResourceType": "Microsoft.Network/virtualNetworkGateways",
+                "targetResourceRegion": "[parameters('location')]",
+                "criteria": {
+                  "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
+                  "allOf": [
+                    {
+                      "criterionType": "StaticThresholdCriterion",
+                      "name": "tunnel-partial-down",
+                      "metricName": "TunnelConnectionCount",
+                      "operator": "LessThan",
+                      "threshold": 2,
+                      "timeAggregation": "Total"
+                    }
+                  ]
+                },
+                "actions": [
+                  {
+                    "actionGroupId": "[parameters('actionGroupP2Id')]"
+                  }
+                ]
+              }
+            },
+            {
+              "condition": "[variables('isManagedOrAbove')]",
+              "type": "Microsoft.Insights/metricAlerts",
+              "apiVersion": "2018-03-01",
+              "name": "[format('alert-vpngw-bandwidth-p3-{0}', parameters('klantCode'))]",
+              "location": "global",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "description": "VPN Gateway bandwidth high P3 dynamic threshold",
+                "severity": 2,
+                "enabled": true,
+                "evaluationFrequency": "PT15M",
+                "windowSize": "PT15M",
+                "scopes": [
+                  "[parameters('targetResourceGroupId')]"
+                ],
+                "targetResourceType": "Microsoft.Network/virtualNetworkGateways",
+                "targetResourceRegion": "[parameters('location')]",
+                "criteria": {
+                  "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
+                  "allOf": [
+                    {
+                      "criterionType": "DynamicThresholdCriterion",
+                      "name": "gateway-bandwidth",
+                      "metricName": "AverageBandwidth",
+                      "operator": "GreaterThan",
+                      "alertSensitivity": "Medium",
+                      "failingPeriods": {
+                        "numberOfEvaluationPeriods": 3,
+                        "minFailingPeriodsToAlert": 2
+                      },
+                      "timeAggregation": "Average"
+                    }
+                  ]
+                },
+                "actions": [
+                  {
+                    "actionGroupId": "[parameters('actionGroupP3Id')]"
+                  }
+                ]
+              }
+            },
+            {
+              "condition": "[variables('isAdvanced')]",
+              "type": "Microsoft.Insights/scheduledQueryRules",
+              "apiVersion": "2023-03-15-preview",
+              "name": "[format('alert-avd-hosts-unavailable-p1-{0}', parameters('klantCode'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "displayName": "[format('[{0}] AVD session hosts unavailable (P1)', parameters('klantCode'))]",
+                "description": "Fires when more than 2 session hosts or > 25% of pool are unavailable.",
+                "severity": 0,
+                "enabled": true,
+                "evaluationFrequency": "PT5M",
+                "windowSize": "PT5M",
+                "scopes": [
+                  "[parameters('workspaceId')]"
+                ],
+                "criteria": {
+                  "allOf": [
+                    {
+                      "query": "            WVDErrors\r\n            | where TimeGenerated > ago(5m)\r\n            | where ServiceError == \"true\"\r\n            | summarize HostErrors = dcount(SessionHostName)\r\n            | where HostErrors > 2\r\n          ",
+                      "timeAggregation": "Count",
+                      "operator": "GreaterThan",
+                      "threshold": 0,
+                      "failingPeriods": {
+                        "numberOfEvaluationPeriods": 1,
+                        "minFailingPeriodsToAlert": 1
+                      }
+                    }
+                  ]
+                },
+                "actions": {
+                  "actionGroups": [
+                    "[parameters('actionGroupP1Id')]"
+                  ]
+                }
+              }
+            },
+            {
+              "condition": "[variables('isAdvanced')]",
+              "type": "Microsoft.Insights/scheduledQueryRules",
+              "apiVersion": "2023-03-15-preview",
+              "name": "[format('alert-avd-connection-errors-p2-{0}', parameters('klantCode'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "displayName": "[format('[{0}] AVD connection errors elevated (P2, dynamic)', parameters('klantCode'))]",
+                "description": "Fires when AVD connection errors exceed the dynamically learned baseline.",
+                "severity": 1,
+                "enabled": true,
+                "evaluationFrequency": "PT15M",
+                "windowSize": "PT15M",
+                "scopes": [
+                  "[parameters('workspaceId')]"
+                ],
+                "criteria": {
+                  "allOf": [
+                    {
+                      "query": "            WVDConnections\r\n            | where TimeGenerated > ago(15m)\r\n            | where State == \"Connected\"\r\n            | summarize Errors = countif(isnotempty(ClientSideIPAddress) == false)\r\n          ",
+                      "timeAggregation": "Count",
+                      "operator": "GreaterThan",
+                      "threshold": 5,
+                      "failingPeriods": {
+                        "numberOfEvaluationPeriods": 2,
+                        "minFailingPeriodsToAlert": 2
+                      }
+                    }
+                  ]
+                },
+                "actions": {
+                  "actionGroups": [
+                    "[parameters('actionGroupP2Id')]"
+                  ]
+                }
+              }
+            },
+            {
+              "condition": "[variables('isAdvanced')]",
+              "type": "Microsoft.Insights/scheduledQueryRules",
+              "apiVersion": "2023-03-15-preview",
+              "name": "[format('alert-avd-scaling-failed-p2-{0}', parameters('klantCode'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "displayName": "[format('[{0}] AVD autoscale action failed (P2)', parameters('klantCode'))]",
+                "description": "Fires when the AVD scaling plan fails to execute an autoscale action.",
+                "severity": 1,
+                "enabled": true,
+                "evaluationFrequency": "PT1H",
+                "windowSize": "PT1H",
+                "scopes": [
+                  "[parameters('workspaceId')]"
+                ],
+                "criteria": {
+                  "allOf": [
+                    {
+                      "query": "            WVDErrors\r\n            | where Source == \"ScalingPlan\"\r\n            | where ServiceError == \"true\"\r\n          ",
+                      "timeAggregation": "Count",
+                      "operator": "GreaterThan",
+                      "threshold": 0,
+                      "failingPeriods": {
+                        "numberOfEvaluationPeriods": 1,
+                        "minFailingPeriodsToAlert": 1
+                      }
+                    }
+                  ]
+                },
+                "actions": {
+                  "actionGroups": [
+                    "[parameters('actionGroupP2Id')]"
+                  ]
+                }
+              }
+            },
+            {
+              "condition": "[variables('isManagedOrAbove')]",
+              "type": "Microsoft.Insights/metricAlerts",
+              "apiVersion": "2018-03-01",
+              "name": "[format('alert-storage-availability-p1-{0}', parameters('klantCode'))]",
+              "location": "global",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "description": "Storage account availability below 99.9 percent over 5 minutes P1",
+                "severity": 0,
+                "enabled": true,
+                "evaluationFrequency": "PT1M",
+                "windowSize": "PT5M",
+                "scopes": [
+                  "[parameters('targetResourceGroupId')]"
+                ],
+                "targetResourceType": "Microsoft.Storage/storageAccounts",
+                "targetResourceRegion": "[parameters('location')]",
+                "criteria": {
+                  "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
+                  "allOf": [
+                    {
+                      "criterionType": "StaticThresholdCriterion",
+                      "name": "storage-availability",
+                      "metricName": "Availability",
+                      "operator": "LessThan",
+                      "threshold": "[json('99.9')]",
+                      "timeAggregation": "Average"
+                    }
+                  ]
+                },
+                "actions": [
+                  {
+                    "actionGroupId": "[parameters('actionGroupP1Id')]"
+                  }
+                ]
+              }
+            },
+            {
+              "condition": "[variables('isManagedOrAbove')]",
+              "type": "Microsoft.Insights/metricAlerts",
+              "apiVersion": "2018-03-01",
+              "name": "[format('alert-storage-capacity-80-p3-{0}', parameters('klantCode'))]",
+              "location": "global",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "description": "Storage used capacity exceeds 80 percent of provisioned limit P3",
+                "severity": 2,
+                "enabled": true,
+                "evaluationFrequency": "PT1H",
+                "windowSize": "PT1H",
+                "scopes": [
+                  "[parameters('targetResourceGroupId')]"
+                ],
+                "targetResourceType": "Microsoft.Storage/storageAccounts",
+                "targetResourceRegion": "[parameters('location')]",
+                "criteria": {
+                  "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
+                  "allOf": [
+                    {
+                      "criterionType": "StaticThresholdCriterion",
+                      "name": "storage-capacity-80",
+                      "metricName": "UsedCapacity",
+                      "operator": "GreaterThan",
+                      "threshold": 87960930222080,
+                      "timeAggregation": "Average"
+                    }
+                  ]
+                },
+                "actions": [
+                  {
+                    "actionGroupId": "[parameters('actionGroupP3Id')]"
+                  }
+                ]
+              }
+            },
+            {
+              "condition": "[variables('isManagedOrAbove')]",
+              "type": "Microsoft.Insights/metricAlerts",
+              "apiVersion": "2018-03-01",
+              "name": "[format('alert-storage-capacity-95-p2-{0}', parameters('klantCode'))]",
+              "location": "global",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "description": "Storage used capacity exceeds 95 percent of provisioned limit P2",
+                "severity": 1,
+                "enabled": true,
+                "evaluationFrequency": "PT1H",
+                "windowSize": "PT1H",
+                "scopes": [
+                  "[parameters('targetResourceGroupId')]"
+                ],
+                "targetResourceType": "Microsoft.Storage/storageAccounts",
+                "targetResourceRegion": "[parameters('location')]",
+                "criteria": {
+                  "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
+                  "allOf": [
+                    {
+                      "criterionType": "StaticThresholdCriterion",
+                      "name": "storage-capacity-95",
+                      "metricName": "UsedCapacity",
+                      "operator": "GreaterThan",
+                      "threshold": 104549375664701,
+                      "timeAggregation": "Average"
+                    }
+                  ]
+                },
+                "actions": [
+                  {
+                    "actionGroupId": "[parameters('actionGroupP2Id')]"
+                  }
+                ]
+              }
+            },
+            {
+              "condition": "[variables('isAdvanced')]",
+              "type": "Microsoft.Insights/metricAlerts",
+              "apiVersion": "2018-03-01",
+              "name": "[format('alert-azurefiles-throttling-p2-{0}', parameters('klantCode'))]",
+              "location": "global",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "description": "Azure Files SuccessWithThrottling sustained more than 10 minutes P2",
+                "severity": 1,
+                "enabled": true,
+                "evaluationFrequency": "PT5M",
+                "windowSize": "PT10M",
+                "scopes": [
+                  "[parameters('targetResourceGroupId')]"
+                ],
+                "targetResourceType": "Microsoft.Storage/storageAccounts/fileServices",
+                "targetResourceRegion": "[parameters('location')]",
+                "criteria": {
+                  "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
+                  "allOf": [
+                    {
+                      "criterionType": "StaticThresholdCriterion",
+                      "name": "files-throttling",
+                      "metricName": "Transactions",
+                      "dimensions": [
+                        {
+                          "name": "ResponseType",
+                          "operator": "Include",
+                          "values": [
+                            "SuccessWithThrottling"
+                          ]
+                        }
+                      ],
+                      "operator": "GreaterThan",
+                      "threshold": 0,
+                      "timeAggregation": "Total"
+                    }
+                  ]
+                },
+                "actions": [
+                  {
+                    "actionGroupId": "[parameters('actionGroupP2Id')]"
+                  }
+                ]
+              }
+            },
+            {
+              "condition": "[variables('isManagedOrAbove')]",
+              "type": "Microsoft.Insights/scheduledQueryRules",
+              "apiVersion": "2023-03-15-preview",
+              "name": "[format('alert-vm-heartbeat-p1-{0}', parameters('klantCode'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "displayName": "[format('[{0}] VM heartbeat lost > 5 min (P1)', parameters('klantCode'))]",
+                "description": "Fires when a VM stops sending heartbeat signals for more than 5 minutes.",
+                "severity": 0,
+                "enabled": true,
+                "evaluationFrequency": "PT5M",
+                "windowSize": "PT5M",
+                "scopes": [
+                  "[parameters('workspaceId')]"
+                ],
+                "criteria": {
+                  "allOf": [
+                    {
+                      "query": "            Heartbeat\r\n            | summarize LastHeartbeat = max(TimeGenerated) by Computer\r\n            | where LastHeartbeat < ago(5m)\r\n          ",
+                      "timeAggregation": "Count",
+                      "operator": "GreaterThan",
+                      "threshold": 0,
+                      "failingPeriods": {
+                        "numberOfEvaluationPeriods": 1,
+                        "minFailingPeriodsToAlert": 1
+                      }
+                    }
+                  ]
+                },
+                "actions": {
+                  "actionGroups": [
+                    "[parameters('actionGroupP1Id')]"
+                  ]
+                }
+              }
+            },
+            {
+              "type": "Microsoft.Insights/activityLogAlerts",
+              "apiVersion": "2020-10-01",
+              "name": "[format('alert-activity-critical-change-p1-{0}', parameters('klantCode'))]",
+              "location": "global",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "enabled": true,
+                "scopes": [
+                  "[subscription().id]"
+                ],
+                "condition": {
+                  "allOf": [
+                    {
+                      "field": "category",
+                      "equals": "Administrative"
+                    },
+                    {
+                      "field": "operationName",
+                      "containsAny": [
+                        "Microsoft.Network/networkSecurityGroups/delete",
+                        "Microsoft.Network/virtualNetworks/delete",
+                        "Microsoft.RecoveryServices/vaults/delete",
+                        "Microsoft.Compute/virtualMachines/delete",
+                        "Microsoft.Network/virtualNetworkGateways/delete"
+                      ]
+                    },
+                    {
+                      "field": "status",
+                      "equals": "Succeeded"
+                    }
+                  ]
+                },
+                "actions": {
+                  "actionGroups": [
+                    {
+                      "actionGroupId": "[parameters('actionGroupP1Id')]"
+                    }
+                  ]
+                },
+                "description": "Fires when a critical resource (NSG, VNet, Vault, VM, VPN GW) is deleted."
+              }
+            },
+            {
+              "type": "Microsoft.Insights/activityLogAlerts",
+              "apiVersion": "2020-10-01",
+              "name": "[format('alert-activity-rbac-change-p2-{0}', parameters('klantCode'))]",
+              "location": "global",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "enabled": true,
+                "scopes": [
+                  "[subscription().id]"
+                ],
+                "condition": {
+                  "allOf": [
+                    {
+                      "field": "category",
+                      "equals": "Administrative"
+                    },
+                    {
+                      "field": "operationName",
+                      "containsAny": [
+                        "Microsoft.Authorization/roleAssignments/write",
+                        "Microsoft.Authorization/roleAssignments/delete",
+                        "Microsoft.Authorization/roleDefinitions/write",
+                        "Microsoft.Authorization/roleDefinitions/delete"
+                      ]
+                    },
+                    {
+                      "field": "status",
+                      "equals": "Succeeded"
+                    }
+                  ]
+                },
+                "actions": {
+                  "actionGroups": [
+                    {
+                      "actionGroupId": "[parameters('actionGroupP2Id')]"
+                    }
+                  ]
+                },
+                "description": "Fires when any RBAC role assignment or definition is created or deleted at subscription level."
+              }
+            },
+            {
+              "type": "Microsoft.Insights/scheduledQueryRules",
+              "apiVersion": "2023-03-15-preview",
+              "name": "[format('alert-policy-noncompliant-p3-{0}', parameters('klantCode'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "displayName": "[format('[{0}] New non-compliant resource detected (P3)', parameters('klantCode'))]",
+                "description": "Fires when Azure Policy detects a new non-compliant resource in the baseline policy set. Escalate to P2 for security category policies.",
+                "severity": 2,
+                "enabled": true,
+                "evaluationFrequency": "PT1H",
+                "windowSize": "PT1H",
+                "scopes": [
+                  "[parameters('workspaceId')]"
+                ],
+                "criteria": {
+                  "allOf": [
+                    {
+                      "query": "            AzureActivity\r\n            | where CategoryValue == \"Policy\"\r\n            | where ActivityStatusValue == \"Start\"\r\n            | where Properties has \"NonCompliant\"\r\n          ",
+                      "timeAggregation": "Count",
+                      "operator": "GreaterThan",
+                      "threshold": 0,
+                      "failingPeriods": {
+                        "numberOfEvaluationPeriods": 1,
+                        "minFailingPeriodsToAlert": 1
+                      }
+                    }
+                  ]
+                },
+                "actions": {
+                  "actionGroups": [
+                    "[parameters('actionGroupP3Id')]"
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "actionGroups",
+        "law"
+      ]
+    },
+    "apr": {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('deploy-apr-{0}', parameters('klantCode'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "targetResourceGroupId": {
+            "value": "[parameters('monitoredResourceGroupId')]"
+          },
+          "klantCode": {
+            "value": "[parameters('klantCode')]"
+          },
+          "maintenanceWindowStart": {
+            "value": "[parameters('maintenanceWindowStart')]"
+          },
+          "maintenanceWindowEnd": {
+            "value": "[parameters('maintenanceWindowEnd')]"
+          },
+          "maintenanceWindowDayOfWeek": {
+            "value": "[parameters('maintenanceWindowDayOfWeek')]"
+          },
+          "tags": {
+            "value": "[variables('commonTags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.44.1.10279",
+              "templateHash": "4870271947137454721"
+            }
+          },
+          "parameters": {
+            "targetResourceGroupId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the resource group to scope the suppression to."
+              }
+            },
+            "klantCode": {
+              "type": "string",
+              "metadata": {
+                "description": "Customer identifier code."
+              }
+            },
+            "maintenanceWindowStart": {
+              "type": "string",
+              "defaultValue": "02:00",
+              "metadata": {
+                "description": "Maintenance window start time (HH:mm, UTC)."
+              }
+            },
+            "maintenanceWindowEnd": {
+              "type": "string",
+              "defaultValue": "06:00",
+              "metadata": {
+                "description": "Maintenance window end time (HH:mm, UTC)."
+              }
+            },
+            "maintenanceWindowDayOfWeek": {
+              "type": "string",
+              "defaultValue": "Sunday",
+              "allowedValues": [
+                "Sunday",
+                "Monday",
+                "Tuesday",
+                "Wednesday",
+                "Thursday",
+                "Friday",
+                "Saturday"
+              ],
+              "metadata": {
+                "description": "Day of week for the weekly maintenance window."
+              }
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Resource tags to apply."
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.AlertsManagement/actionRules",
+              "apiVersion": "2023-05-01-preview",
+              "name": "[format('apr-maintenance-{0}', parameters('klantCode'))]",
+              "location": "global",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "description": "[format('Suppresses all alerts during the weekly maintenance window ({0} {1}–{2} UTC).', parameters('maintenanceWindowDayOfWeek'), parameters('maintenanceWindowStart'), parameters('maintenanceWindowEnd'))]",
+                "scopes": [
+                  "[parameters('targetResourceGroupId')]"
+                ],
+                "enabled": true,
+                "schedule": {
+                  "timeZone": "UTC",
+                  "recurrences": [
+                    {
+                      "recurrenceType": "Weekly",
+                      "daysOfWeek": [
+                        "[parameters('maintenanceWindowDayOfWeek')]"
+                      ],
+                      "startTime": "[parameters('maintenanceWindowStart')]",
+                      "endTime": "[parameters('maintenanceWindowEnd')]"
+                    }
+                  ]
+                },
+                "actions": [
+                  {
+                    "actionType": "Suppression"
+                  }
+                ]
+              }
+            }
+          ],
+          "outputs": {
+            "aprId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the Alert Processing Rule."
+              },
+              "value": "[resourceId('Microsoft.AlertsManagement/actionRules', format('apr-maintenance-{0}', parameters('klantCode')))]"
+            }
+          }
+        }
+      }
+    },
+    "budget": {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('deploy-budget-{0}', parameters('klantCode'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "klantCode": {
+            "value": "[parameters('klantCode')]"
+          },
+          "budgetAmountEur": {
+            "value": "[parameters('budgetAmountEur')]"
+          },
+          "actionGroupP2Id": {
+            "value": "[reference('actionGroups').outputs.actionGroupP2Id.value]"
+          },
+          "actionGroupP3Id": {
+            "value": "[reference('actionGroups').outputs.actionGroupP3Id.value]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.44.1.10279",
+              "templateHash": "10823070654010313988"
+            }
+          },
+          "parameters": {
+            "klantCode": {
+              "type": "string",
+              "metadata": {
+                "description": "Customer identifier code."
+              }
+            },
+            "budgetAmountEur": {
+              "type": "int",
+              "defaultValue": 25,
+              "minValue": 1,
+              "metadata": {
+                "description": "Monthly budget amount in EUR."
+              }
+            },
+            "actionGroupP2Id": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the P2 Action Group (100% alert + anomaly)."
+              }
+            },
+            "actionGroupP3Id": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the P3 Action Group (80% and 90% alerts)."
+              }
+            },
+            "budgetStartDate": {
+              "type": "string",
+              "defaultValue": "2026-01-01",
+              "metadata": {
+                "description": "Start date for the budget period in format YYYY-MM-DD."
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Consumption/budgets",
+              "apiVersion": "2023-11-01",
+              "name": "[format('bud-monitoring-{0}', parameters('klantCode'))]",
+              "properties": {
+                "category": "Cost",
+                "amount": "[parameters('budgetAmountEur')]",
+                "timeGrain": "Monthly",
+                "timePeriod": {
+                  "startDate": "[parameters('budgetStartDate')]"
+                },
+                "notifications": {
+                  "At80Percent": {
+                    "enabled": true,
+                    "operator": "GreaterThan",
+                    "threshold": 80,
+                    "thresholdType": "Actual",
+                    "contactEmails": [],
+                    "contactGroups": [
+                      "[parameters('actionGroupP3Id')]"
+                    ]
+                  },
+                  "At90Percent": {
+                    "enabled": true,
+                    "operator": "GreaterThan",
+                    "threshold": 90,
+                    "thresholdType": "Actual",
+                    "contactEmails": [],
+                    "contactGroups": [
+                      "[parameters('actionGroupP3Id')]"
+                    ]
+                  },
+                  "At100Percent": {
+                    "enabled": true,
+                    "operator": "GreaterThan",
+                    "threshold": 100,
+                    "thresholdType": "Actual",
+                    "contactEmails": [],
+                    "contactGroups": [
+                      "[parameters('actionGroupP2Id')]"
+                    ]
+                  }
+                }
+              }
+            }
+          ],
+          "outputs": {
+            "budgetId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the budget."
+              },
+              "value": "[resourceId('Microsoft.Consumption/budgets', format('bud-monitoring-{0}', parameters('klantCode')))]"
+            },
+            "budgetName": {
+              "type": "string",
+              "metadata": {
+                "description": "Budget name for reference in Chore 11 calibration."
+              },
+              "value": "[format('bud-monitoring-{0}', parameters('klantCode'))]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "actionGroups"
+      ]
+    },
+    "policy": {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('deploy-policy-{0}', parameters('klantCode'))]",
+      "subscriptionId": "[variables('monitoredSubId')]",
+      "resourceGroup": "[variables('monitoredRgName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "klantCode": {
+            "value": "[parameters('klantCode')]"
+          },
+          "workspaceId": {
+            "value": "[reference('law').outputs.workspaceId.value]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.44.1.10279",
+              "templateHash": "647338658113108688"
+            }
+          },
+          "parameters": {
+            "klantCode": {
+              "type": "string",
+              "metadata": {
+                "description": "Customer identifier code."
+              }
+            },
+            "workspaceId": {
+              "type": "string",
+              "metadata": {
+                "description": "Full resource ID of the Log Analytics Workspace."
+              }
+            },
+            "location": {
+              "type": "string",
+              "allowedValues": [
+                "westeurope"
+              ],
+              "metadata": {
+                "description": "Azure region for the policy assignment managed identity. Must be westeurope."
+              }
+            }
+          },
+          "variables": {
+            "policyVm": "/providers/Microsoft.Authorization/policyDefinitions/0868462e-8a38-4f8d-ae35-2e02b6f6d5c7",
+            "policyStorage": "/providers/Microsoft.Authorization/policyDefinitions/59759c62-9a22-4cdf-ae64-074495983fef",
+            "policyRsv": "/providers/Microsoft.Authorization/policyDefinitions/c717fb0c-d118-4c43-ab3d-ece30ac81fb3",
+            "policyVpnGw": "/providers/Microsoft.Authorization/policyDefinitions/ed6ae75a-828f-4fea-88fd-dead1145f1dd"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Authorization/policyAssignments",
+              "apiVersion": "2023-04-01",
+              "name": "[format('pa-diag-vm-{0}', parameters('klantCode'))]",
+              "location": "[parameters('location')]",
+              "identity": {
+                "type": "SystemAssigned"
+              },
+              "properties": {
+                "displayName": "[format('[{0}] Diag settings – VMs to LAW', parameters('klantCode'))]",
+                "policyDefinitionId": "[variables('policyVm')]",
+                "parameters": {
+                  "logAnalytics": {
+                    "value": "[parameters('workspaceId')]"
+                  }
+                },
+                "enforcementMode": "Default",
+                "nonComplianceMessages": [
+                  {
+                    "message": "VM diagnostic settings must route to the monitoring Log Analytics Workspace."
+                  }
+                ]
+              }
+            },
+            {
+              "type": "Microsoft.Authorization/policyAssignments",
+              "apiVersion": "2023-04-01",
+              "name": "[format('pa-diag-storage-{0}', parameters('klantCode'))]",
+              "location": "[parameters('location')]",
+              "identity": {
+                "type": "SystemAssigned"
+              },
+              "properties": {
+                "displayName": "[format('[{0}] Diag settings – Storage to LAW', parameters('klantCode'))]",
+                "policyDefinitionId": "[variables('policyStorage')]",
+                "parameters": {
+                  "logAnalytics": {
+                    "value": "[parameters('workspaceId')]"
+                  }
+                },
+                "enforcementMode": "Default",
+                "nonComplianceMessages": [
+                  {
+                    "message": "Storage account diagnostic settings must route to the monitoring Log Analytics Workspace."
+                  }
+                ]
+              }
+            },
+            {
+              "type": "Microsoft.Authorization/policyAssignments",
+              "apiVersion": "2023-04-01",
+              "name": "[format('pa-diag-rsv-{0}', parameters('klantCode'))]",
+              "location": "[parameters('location')]",
+              "identity": {
+                "type": "SystemAssigned"
+              },
+              "properties": {
+                "displayName": "[format('[{0}] Diag settings – RSV to LAW', parameters('klantCode'))]",
+                "policyDefinitionId": "[variables('policyRsv')]",
+                "parameters": {
+                  "logAnalytics": {
+                    "value": "[parameters('workspaceId')]"
+                  }
+                },
+                "enforcementMode": "Default",
+                "nonComplianceMessages": [
+                  {
+                    "message": "Recovery Services Vault diagnostic settings must route to the monitoring Log Analytics Workspace."
+                  }
+                ]
+              }
+            },
+            {
+              "type": "Microsoft.Authorization/policyAssignments",
+              "apiVersion": "2023-04-01",
+              "name": "[format('pa-diag-vpngw-{0}', parameters('klantCode'))]",
+              "location": "[parameters('location')]",
+              "identity": {
+                "type": "SystemAssigned"
+              },
+              "properties": {
+                "displayName": "[format('[{0}] Diag settings – VPN GW to LAW', parameters('klantCode'))]",
+                "policyDefinitionId": "[variables('policyVpnGw')]",
+                "parameters": {
+                  "logAnalytics": {
+                    "value": "[parameters('workspaceId')]"
+                  }
+                },
+                "enforcementMode": "Default",
+                "nonComplianceMessages": [
+                  {
+                    "message": "VPN Gateway diagnostic settings must route to the monitoring Log Analytics Workspace."
+                  }
+                ]
+              }
+            },
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "name": "[guid(resourceId('Microsoft.Authorization/policyAssignments', format('pa-diag-vm-{0}', parameters('klantCode'))), 'Contributor', resourceGroup().id)]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')]",
+                "principalId": "[reference(resourceId('Microsoft.Authorization/policyAssignments', format('pa-diag-vm-{0}', parameters('klantCode'))), '2023-04-01', 'full').identity.principalId]",
+                "principalType": "ServicePrincipal"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Authorization/policyAssignments', format('pa-diag-vm-{0}', parameters('klantCode')))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "name": "[guid(resourceId('Microsoft.Authorization/policyAssignments', format('pa-diag-storage-{0}', parameters('klantCode'))), 'Contributor', resourceGroup().id)]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')]",
+                "principalId": "[reference(resourceId('Microsoft.Authorization/policyAssignments', format('pa-diag-storage-{0}', parameters('klantCode'))), '2023-04-01', 'full').identity.principalId]",
+                "principalType": "ServicePrincipal"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Authorization/policyAssignments', format('pa-diag-storage-{0}', parameters('klantCode')))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "name": "[guid(resourceId('Microsoft.Authorization/policyAssignments', format('pa-diag-rsv-{0}', parameters('klantCode'))), 'Contributor', resourceGroup().id)]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')]",
+                "principalId": "[reference(resourceId('Microsoft.Authorization/policyAssignments', format('pa-diag-rsv-{0}', parameters('klantCode'))), '2023-04-01', 'full').identity.principalId]",
+                "principalType": "ServicePrincipal"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Authorization/policyAssignments', format('pa-diag-rsv-{0}', parameters('klantCode')))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "name": "[guid(resourceId('Microsoft.Authorization/policyAssignments', format('pa-diag-vpngw-{0}', parameters('klantCode'))), 'Contributor', resourceGroup().id)]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')]",
+                "principalId": "[reference(resourceId('Microsoft.Authorization/policyAssignments', format('pa-diag-vpngw-{0}', parameters('klantCode'))), '2023-04-01', 'full').identity.principalId]",
+                "principalType": "ServicePrincipal"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Authorization/policyAssignments', format('pa-diag-vpngw-{0}', parameters('klantCode')))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "policyAssignmentVmId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the VM policy assignment."
+              },
+              "value": "[resourceId('Microsoft.Authorization/policyAssignments', format('pa-diag-vm-{0}', parameters('klantCode')))]"
+            },
+            "policyAssignmentStorageId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the Storage policy assignment."
+              },
+              "value": "[resourceId('Microsoft.Authorization/policyAssignments', format('pa-diag-storage-{0}', parameters('klantCode')))]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "law"
+      ]
+    },
+    "lighthouse": {
+      "condition": "[variables('deployLighthouse')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('deploy-lighthouse-{0}', parameters('klantCode'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "managingTenantId": {
+            "value": "[parameters('managingTenantId')]"
+          },
+          "monitoringReaderGroupId": {
+            "value": "[parameters('monitoringReaderGroupId')]"
+          },
+          "monitoringContributorGroupId": {
+            "value": "[parameters('monitoringContributorGroupId')]"
+          },
+          "klantCode": {
+            "value": "[parameters('klantCode')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.44.1.10279",
+              "templateHash": "14611220620790315011"
+            }
+          },
+          "parameters": {
+            "managingTenantId": {
+              "type": "string",
+              "metadata": {
+                "description": "Managing tenant ID (IT Synergy Azure AD tenant)."
+              }
+            },
+            "monitoringReaderGroupId": {
+              "type": "string",
+              "metadata": {
+                "description": "Object ID of the Entra security group for Monitoring Reader access."
+              }
+            },
+            "monitoringContributorGroupId": {
+              "type": "string",
+              "metadata": {
+                "description": "Object ID of the Entra security group for Monitoring Contributor access."
+              }
+            },
+            "klantCode": {
+              "type": "string",
+              "metadata": {
+                "description": "Customer identifier code."
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.ManagedServices/registrationDefinitions",
+              "apiVersion": "2022-10-01",
+              "name": "[guid(format('lighthouse-monitoring-{0}', parameters('klantCode')))]",
+              "properties": {
+                "registrationDefinitionName": "[format('IT Synergy – Monitoring Baseline ({0})', parameters('klantCode'))]",
+                "description": "Delegates monitoring read and contribute access for the IT Synergy monitoring baseline.",
+                "managedByTenantId": "[parameters('managingTenantId')]",
+                "authorizations": [
+                  {
+                    "principalId": "[parameters('monitoringReaderGroupId')]",
+                    "roleDefinitionId": "43d0d8ad-25c7-4714-9337-8ba259a9fe05",
+                    "principalIdDisplayName": "IT Synergy – Monitoring Reader"
+                  },
+                  {
+                    "principalId": "[parameters('monitoringReaderGroupId')]",
+                    "roleDefinitionId": "acdd72a7-3385-48ef-bd42-f606fba81ae7",
+                    "principalIdDisplayName": "IT Synergy – Resource Reader"
+                  },
+                  {
+                    "principalId": "[parameters('monitoringContributorGroupId')]",
+                    "roleDefinitionId": "749f88d5-cbae-40b8-bcfc-e573ddc772fa",
+                    "principalIdDisplayName": "IT Synergy – Monitoring Contributor"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "Microsoft.ManagedServices/registrationAssignments",
+              "apiVersion": "2022-10-01",
+              "name": "[guid(format('lighthouse-assignment-monitoring-{0}', parameters('klantCode')))]",
+              "properties": {
+                "registrationDefinitionId": "[resourceId('Microsoft.ManagedServices/registrationDefinitions', guid(format('lighthouse-monitoring-{0}', parameters('klantCode'))))]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.ManagedServices/registrationDefinitions', guid(format('lighthouse-monitoring-{0}', parameters('klantCode'))))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "registrationDefinitionId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the Lighthouse registration definition."
+              },
+              "value": "[resourceId('Microsoft.ManagedServices/registrationDefinitions', guid(format('lighthouse-monitoring-{0}', parameters('klantCode'))))]"
+            },
+            "registrationAssignmentId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the Lighthouse registration assignment."
+              },
+              "value": "[resourceId('Microsoft.ManagedServices/registrationAssignments', guid(format('lighthouse-assignment-monitoring-{0}', parameters('klantCode'))))]"
+            }
+          }
+        }
+      }
+    }
+  },
+  "outputs": {
+    "workspaceId": {
+      "type": "string",
+      "metadata": {
+        "description": "Log Analytics Workspace resource ID."
+      },
+      "value": "[reference('law').outputs.workspaceId.value]"
+    },
+    "actionGroupP1Id": {
+      "type": "string",
+      "metadata": {
+        "description": "P1 Action Group resource ID."
+      },
+      "value": "[reference('actionGroups').outputs.actionGroupP1Id.value]"
+    },
+    "actionGroupP2Id": {
+      "type": "string",
+      "metadata": {
+        "description": "P2 Action Group resource ID."
+      },
+      "value": "[reference('actionGroups').outputs.actionGroupP2Id.value]"
+    },
+    "actionGroupP3Id": {
+      "type": "string",
+      "metadata": {
+        "description": "P3 Action Group resource ID."
+      },
+      "value": "[reference('actionGroups').outputs.actionGroupP3Id.value]"
+    }
+  }
+}

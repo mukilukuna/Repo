@@ -1,3 +1,12 @@
+# Controleer en installeer vereiste modules
+foreach ($module in @('ExchangeOnlineManagement')) {
+    if (-not (Get-Module -ListAvailable -Name $module)) {
+        Write-Host "Module '$module' wordt geïnstalleerd..." -ForegroundColor Yellow
+        Install-Module -Name $module -Force -AllowClobber -Scope CurrentUser
+    }
+    Import-Module -Name $module -ErrorAction Stop
+}
+
 # Script: Office365_Tenant_Get-MailboxPermissions.ps1
 # Purpose: Office365 Tenant Get MailboxPermissions
 Write-Host "Fetching mailboxes"

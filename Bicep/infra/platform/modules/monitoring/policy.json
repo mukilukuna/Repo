@@ -1,0 +1,206 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.44.1.10279",
+      "templateHash": "647338658113108688"
+    }
+  },
+  "parameters": {
+    "klantCode": {
+      "type": "string",
+      "metadata": {
+        "description": "Customer identifier code."
+      }
+    },
+    "workspaceId": {
+      "type": "string",
+      "metadata": {
+        "description": "Full resource ID of the Log Analytics Workspace."
+      }
+    },
+    "location": {
+      "type": "string",
+      "allowedValues": [
+        "westeurope"
+      ],
+      "metadata": {
+        "description": "Azure region for the policy assignment managed identity. Must be westeurope."
+      }
+    }
+  },
+  "variables": {
+    "policyVm": "/providers/Microsoft.Authorization/policyDefinitions/0868462e-8a38-4f8d-ae35-2e02b6f6d5c7",
+    "policyStorage": "/providers/Microsoft.Authorization/policyDefinitions/59759c62-9a22-4cdf-ae64-074495983fef",
+    "policyRsv": "/providers/Microsoft.Authorization/policyDefinitions/c717fb0c-d118-4c43-ab3d-ece30ac81fb3",
+    "policyVpnGw": "/providers/Microsoft.Authorization/policyDefinitions/ed6ae75a-828f-4fea-88fd-dead1145f1dd"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Authorization/policyAssignments",
+      "apiVersion": "2023-04-01",
+      "name": "[format('pa-diag-vm-{0}', parameters('klantCode'))]",
+      "location": "[parameters('location')]",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "displayName": "[format('[{0}] Diag settings – VMs to LAW', parameters('klantCode'))]",
+        "policyDefinitionId": "[variables('policyVm')]",
+        "parameters": {
+          "logAnalytics": {
+            "value": "[parameters('workspaceId')]"
+          }
+        },
+        "enforcementMode": "Default",
+        "nonComplianceMessages": [
+          {
+            "message": "VM diagnostic settings must route to the monitoring Log Analytics Workspace."
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Authorization/policyAssignments",
+      "apiVersion": "2023-04-01",
+      "name": "[format('pa-diag-storage-{0}', parameters('klantCode'))]",
+      "location": "[parameters('location')]",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "displayName": "[format('[{0}] Diag settings – Storage to LAW', parameters('klantCode'))]",
+        "policyDefinitionId": "[variables('policyStorage')]",
+        "parameters": {
+          "logAnalytics": {
+            "value": "[parameters('workspaceId')]"
+          }
+        },
+        "enforcementMode": "Default",
+        "nonComplianceMessages": [
+          {
+            "message": "Storage account diagnostic settings must route to the monitoring Log Analytics Workspace."
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Authorization/policyAssignments",
+      "apiVersion": "2023-04-01",
+      "name": "[format('pa-diag-rsv-{0}', parameters('klantCode'))]",
+      "location": "[parameters('location')]",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "displayName": "[format('[{0}] Diag settings – RSV to LAW', parameters('klantCode'))]",
+        "policyDefinitionId": "[variables('policyRsv')]",
+        "parameters": {
+          "logAnalytics": {
+            "value": "[parameters('workspaceId')]"
+          }
+        },
+        "enforcementMode": "Default",
+        "nonComplianceMessages": [
+          {
+            "message": "Recovery Services Vault diagnostic settings must route to the monitoring Log Analytics Workspace."
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Authorization/policyAssignments",
+      "apiVersion": "2023-04-01",
+      "name": "[format('pa-diag-vpngw-{0}', parameters('klantCode'))]",
+      "location": "[parameters('location')]",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "displayName": "[format('[{0}] Diag settings – VPN GW to LAW', parameters('klantCode'))]",
+        "policyDefinitionId": "[variables('policyVpnGw')]",
+        "parameters": {
+          "logAnalytics": {
+            "value": "[parameters('workspaceId')]"
+          }
+        },
+        "enforcementMode": "Default",
+        "nonComplianceMessages": [
+          {
+            "message": "VPN Gateway diagnostic settings must route to the monitoring Log Analytics Workspace."
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "name": "[guid(resourceId('Microsoft.Authorization/policyAssignments', format('pa-diag-vm-{0}', parameters('klantCode'))), 'Contributor', resourceGroup().id)]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')]",
+        "principalId": "[reference(resourceId('Microsoft.Authorization/policyAssignments', format('pa-diag-vm-{0}', parameters('klantCode'))), '2023-04-01', 'full').identity.principalId]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Authorization/policyAssignments', format('pa-diag-vm-{0}', parameters('klantCode')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "name": "[guid(resourceId('Microsoft.Authorization/policyAssignments', format('pa-diag-storage-{0}', parameters('klantCode'))), 'Contributor', resourceGroup().id)]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')]",
+        "principalId": "[reference(resourceId('Microsoft.Authorization/policyAssignments', format('pa-diag-storage-{0}', parameters('klantCode'))), '2023-04-01', 'full').identity.principalId]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Authorization/policyAssignments', format('pa-diag-storage-{0}', parameters('klantCode')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "name": "[guid(resourceId('Microsoft.Authorization/policyAssignments', format('pa-diag-rsv-{0}', parameters('klantCode'))), 'Contributor', resourceGroup().id)]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')]",
+        "principalId": "[reference(resourceId('Microsoft.Authorization/policyAssignments', format('pa-diag-rsv-{0}', parameters('klantCode'))), '2023-04-01', 'full').identity.principalId]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Authorization/policyAssignments', format('pa-diag-rsv-{0}', parameters('klantCode')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "name": "[guid(resourceId('Microsoft.Authorization/policyAssignments', format('pa-diag-vpngw-{0}', parameters('klantCode'))), 'Contributor', resourceGroup().id)]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')]",
+        "principalId": "[reference(resourceId('Microsoft.Authorization/policyAssignments', format('pa-diag-vpngw-{0}', parameters('klantCode'))), '2023-04-01', 'full').identity.principalId]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Authorization/policyAssignments', format('pa-diag-vpngw-{0}', parameters('klantCode')))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "policyAssignmentVmId": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of the VM policy assignment."
+      },
+      "value": "[resourceId('Microsoft.Authorization/policyAssignments', format('pa-diag-vm-{0}', parameters('klantCode')))]"
+    },
+    "policyAssignmentStorageId": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of the Storage policy assignment."
+      },
+      "value": "[resourceId('Microsoft.Authorization/policyAssignments', format('pa-diag-storage-{0}', parameters('klantCode')))]"
+    }
+  }
+}

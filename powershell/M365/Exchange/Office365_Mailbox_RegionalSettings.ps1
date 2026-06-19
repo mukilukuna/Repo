@@ -1,5 +1,15 @@
 # Script: Office365_Mailbox_RegionalSettings.ps1
 # Purpose: Office365 Mailbox RegionalSettings
+
+# Controleer en installeer vereiste modules
+foreach ($module in @('ExchangeOnlineManagement')) {
+    if (-not (Get-Module -ListAvailable -Name $module)) {
+        Write-Host "Module '$module' wordt geïnstalleerd..." -ForegroundColor Yellow
+        Install-Module -Name $module -Force -AllowClobber -Scope CurrentUser
+    }
+    Import-Module -Name $module -ErrorAction Stop
+}
+
 Connect-ExchangeOnline
 Get-MailboxRegionalConfiguration user5@example.com
 Set-MailboxRegionalConfiguration -Identity user5@example.com -Language nl-NL -DateFormat “d-M-yyyy” -timezone “W. Europe Standard Time” -timeformat “HH:mm” -LocalizeDefaultFolderName:$true

@@ -1,0 +1,93 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.44.1.10279",
+      "templateHash": "14611220620790315011"
+    }
+  },
+  "parameters": {
+    "managingTenantId": {
+      "type": "string",
+      "metadata": {
+        "description": "Managing tenant ID (IT Synergy Azure AD tenant)."
+      }
+    },
+    "monitoringReaderGroupId": {
+      "type": "string",
+      "metadata": {
+        "description": "Object ID of the Entra security group for Monitoring Reader access."
+      }
+    },
+    "monitoringContributorGroupId": {
+      "type": "string",
+      "metadata": {
+        "description": "Object ID of the Entra security group for Monitoring Contributor access."
+      }
+    },
+    "klantCode": {
+      "type": "string",
+      "metadata": {
+        "description": "Customer identifier code."
+      }
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.ManagedServices/registrationDefinitions",
+      "apiVersion": "2022-10-01",
+      "name": "[guid(format('lighthouse-monitoring-{0}', parameters('klantCode')))]",
+      "properties": {
+        "registrationDefinitionName": "[format('IT Synergy – Monitoring Baseline ({0})', parameters('klantCode'))]",
+        "description": "Delegates monitoring read and contribute access for the IT Synergy monitoring baseline.",
+        "managedByTenantId": "[parameters('managingTenantId')]",
+        "authorizations": [
+          {
+            "principalId": "[parameters('monitoringReaderGroupId')]",
+            "roleDefinitionId": "43d0d8ad-25c7-4714-9337-8ba259a9fe05",
+            "principalIdDisplayName": "IT Synergy – Monitoring Reader"
+          },
+          {
+            "principalId": "[parameters('monitoringReaderGroupId')]",
+            "roleDefinitionId": "acdd72a7-3385-48ef-bd42-f606fba81ae7",
+            "principalIdDisplayName": "IT Synergy – Resource Reader"
+          },
+          {
+            "principalId": "[parameters('monitoringContributorGroupId')]",
+            "roleDefinitionId": "749f88d5-cbae-40b8-bcfc-e573ddc772fa",
+            "principalIdDisplayName": "IT Synergy – Monitoring Contributor"
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.ManagedServices/registrationAssignments",
+      "apiVersion": "2022-10-01",
+      "name": "[guid(format('lighthouse-assignment-monitoring-{0}', parameters('klantCode')))]",
+      "properties": {
+        "registrationDefinitionId": "[resourceId('Microsoft.ManagedServices/registrationDefinitions', guid(format('lighthouse-monitoring-{0}', parameters('klantCode'))))]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ManagedServices/registrationDefinitions', guid(format('lighthouse-monitoring-{0}', parameters('klantCode'))))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "registrationDefinitionId": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of the Lighthouse registration definition."
+      },
+      "value": "[resourceId('Microsoft.ManagedServices/registrationDefinitions', guid(format('lighthouse-monitoring-{0}', parameters('klantCode'))))]"
+    },
+    "registrationAssignmentId": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of the Lighthouse registration assignment."
+      },
+      "value": "[resourceId('Microsoft.ManagedServices/registrationAssignments', guid(format('lighthouse-assignment-monitoring-{0}', parameters('klantCode'))))]"
+    }
+  }
+}

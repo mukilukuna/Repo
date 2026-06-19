@@ -1,0 +1,133 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.44.1.10279",
+      "templateHash": "12408673081095361450"
+    }
+  },
+  "parameters": {
+    "klantCode": {
+      "type": "string",
+      "metadata": {
+        "description": "Customer identifier code (lowercase, max 8 chars)."
+      }
+    },
+    "location": {
+      "type": "string",
+      "allowedValues": [
+        "westeurope"
+      ],
+      "metadata": {
+        "description": "Azure region for deployment. Must be westeurope."
+      }
+    },
+    "retentionDays": {
+      "type": "int",
+      "defaultValue": 30,
+      "minValue": 30,
+      "maxValue": 730,
+      "metadata": {
+        "description": "Interactive retention period in days."
+      }
+    },
+    "dailyCapGb": {
+      "type": "int",
+      "defaultValue": 1,
+      "minValue": 1,
+      "metadata": {
+        "description": "Daily ingestion cap in GB. Set after Phase 1 calibration."
+      }
+    },
+    "tags": {
+      "type": "object",
+      "defaultValue": {},
+      "metadata": {
+        "description": "Resource tags to apply."
+      }
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.OperationalInsights/workspaces",
+      "apiVersion": "2023-09-01",
+      "name": "[format('log-{0}-platform-weu', parameters('klantCode'))]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "sku": {
+          "name": "PerGB2018"
+        },
+        "retentionInDays": "[parameters('retentionDays')]",
+        "workspaceCapping": {
+          "dailyQuotaGb": "[parameters('dailyCapGb')]"
+        },
+        "features": {
+          "enableLogAccessUsingOnlyResourcePermissions": true
+        },
+        "publicNetworkAccessForIngestion": "Enabled",
+        "publicNetworkAccessForQuery": "Enabled"
+      }
+    },
+    {
+      "type": "Microsoft.Insights/scheduledQueryRules",
+      "apiVersion": "2023-03-15-preview",
+      "name": "[format('alert-law-daily-cap-warning-{0}', parameters('klantCode'))]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "displayName": "[format('[{0}] Log Analytics daily cap at 80%', parameters('klantCode'))]",
+        "description": "Fires when the workspace is approaching the daily ingestion cap. Investigate data sources before the cap is hit and logs stop flowing.",
+        "severity": 2,
+        "enabled": true,
+        "evaluationFrequency": "PT1H",
+        "windowSize": "PT1H",
+        "scopes": [
+          "[resourceId('Microsoft.OperationalInsights/workspaces', format('log-{0}-platform-weu', parameters('klantCode')))]"
+        ],
+        "criteria": {
+          "allOf": [
+            {
+              "query": "            Usage\r\n            | where TimeGenerated > ago(1d)\r\n            | summarize IngestedGB = sum(Quantity) / 1000\r\n            | where IngestedGB >= ${dailyCapGb} * 0.8\r\n          ",
+              "timeAggregation": "Count",
+              "operator": "GreaterThanOrEqual",
+              "threshold": 1,
+              "failingPeriods": {
+                "numberOfEvaluationPeriods": 1,
+                "minFailingPeriodsToAlert": 1
+              }
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.OperationalInsights/workspaces', format('log-{0}-platform-weu', parameters('klantCode')))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "workspaceId": {
+      "type": "string",
+      "metadata": {
+        "description": "Full resource ID of the Log Analytics Workspace."
+      },
+      "value": "[resourceId('Microsoft.OperationalInsights/workspaces', format('log-{0}-platform-weu', parameters('klantCode')))]"
+    },
+    "workspaceCustomerId": {
+      "type": "string",
+      "metadata": {
+        "description": "Log Analytics Workspace ID (customer / workspace GUID)."
+      },
+      "value": "[reference(resourceId('Microsoft.OperationalInsights/workspaces', format('log-{0}-platform-weu', parameters('klantCode'))), '2023-09-01').customerId]"
+    },
+    "workspaceName": {
+      "type": "string",
+      "metadata": {
+        "description": "Log Analytics Workspace name."
+      },
+      "value": "[format('log-{0}-platform-weu', parameters('klantCode'))]"
+    }
+  }
+}

@@ -1,5 +1,15 @@
 # Script: TweedeAdminVerwijderen.ps1
 # Purpose: TweedeAdminVerwijderen
+
+# Controleer en installeer vereiste modules
+foreach ($module in @('Microsoft.Online.SharePoint.PowerShell')) {
+    if (-not (Get-Module -ListAvailable -Name $module)) {
+        Write-Host "Module '$module' wordt geïnstalleerd..." -ForegroundColor Yellow
+        Install-Module -Name $module -Force -AllowClobber -Scope CurrentUser
+    }
+    Import-Module -Name $module -ErrorAction Stop
+}
+
 <# 
 Script om een secundaire beheerder te verwijderen uit alle OneDrive for Business-sites van een organisatie.
 

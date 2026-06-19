@@ -1,0 +1,370 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.44.1.10279",
+      "templateHash": "7393003695150087304"
+    }
+  },
+  "parameters": {
+    "location": {
+      "type": "string",
+      "defaultValue": "westeurope",
+      "allowedValues": [
+        "westeurope"
+      ]
+    },
+    "klantCode": {
+      "type": "string",
+      "defaultValue": "pilot"
+    },
+    "adminUsername": {
+      "type": "string",
+      "defaultValue": "azureadmin",
+      "metadata": {
+        "description": "Admin username for the mock VM."
+      }
+    },
+    "adminPassword": {
+      "type": "securestring",
+      "metadata": {
+        "description": "Admin password for the mock VM. Provide via parameter file or Key Vault reference."
+      }
+    },
+    "avdTokenExpiry": {
+      "type": "string",
+      "defaultValue": "[dateTimeAdd(utcNow(), 'P1D')]",
+      "metadata": {
+        "description": "Token expiration time for AVD host pool registration (ISO 8601). Defaults to 24h from deployment time."
+      }
+    }
+  },
+  "variables": {
+    "tags": {
+      "Environment": "mock",
+      "ManagedBy": "platform-team",
+      "CostCenter": "monitoring-pilot"
+    },
+    "prefix": "[format('{0}-mock-weu', parameters('klantCode'))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Network/virtualNetworks",
+      "apiVersion": "2024-01-01",
+      "name": "[format('vnet-{0}', variables('prefix'))]",
+      "location": "[parameters('location')]",
+      "tags": "[variables('tags')]",
+      "properties": {
+        "addressSpace": {
+          "addressPrefixes": [
+            "10.10.0.0/16"
+          ]
+        },
+        "subnets": [
+          {
+            "name": "GatewaySubnet",
+            "properties": {
+              "addressPrefix": "10.10.0.0/27"
+            }
+          },
+          {
+            "name": "snet-workloads",
+            "properties": {
+              "addressPrefix": "10.10.1.0/24"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.RecoveryServices/vaults",
+      "apiVersion": "2024-04-01",
+      "name": "[format('rsv-{0}', variables('prefix'))]",
+      "location": "[parameters('location')]",
+      "tags": "[variables('tags')]",
+      "sku": {
+        "name": "RS0",
+        "tier": "Standard"
+      },
+      "properties": {
+        "publicNetworkAccess": "Enabled",
+        "securitySettings": {
+          "softDeleteSettings": {
+            "softDeleteState": "Enabled",
+            "softDeleteRetentionPeriodInDays": 14
+          },
+          "immutabilitySettings": {
+            "state": "Disabled"
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.RecoveryServices/vaults/backupPolicies",
+      "apiVersion": "2024-04-01",
+      "name": "[format('{0}/{1}', format('rsv-{0}', variables('prefix')), 'DefaultPolicy')]",
+      "properties": {
+        "backupManagementType": "AzureIaasVM",
+        "instantRpRetentionRangeInDays": 2,
+        "schedulePolicy": {
+          "schedulePolicyType": "SimpleSchedulePolicy",
+          "scheduleRunFrequency": "Daily",
+          "scheduleRunTimes": [
+            "2000-01-01T02:00:00Z"
+          ]
+        },
+        "retentionPolicy": {
+          "retentionPolicyType": "LongTermRetentionPolicy",
+          "dailySchedule": {
+            "retentionTimes": [
+              "2000-01-01T02:00:00Z"
+            ],
+            "retentionDuration": {
+              "count": 30,
+              "durationType": "Days"
+            }
+          }
+        },
+        "timeZone": "UTC"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.RecoveryServices/vaults', format('rsv-{0}', variables('prefix')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts",
+      "apiVersion": "2023-05-01",
+      "name": "[format('st{0}mockweu', replace(parameters('klantCode'), '-', ''))]",
+      "location": "[parameters('location')]",
+      "tags": "[variables('tags')]",
+      "kind": "StorageV2",
+      "sku": {
+        "name": "Standard_LRS"
+      },
+      "properties": {
+        "accessTier": "Hot",
+        "minimumTlsVersion": "TLS1_2",
+        "allowBlobPublicAccess": false,
+        "supportsHttpsTrafficOnly": true,
+        "largeFileSharesState": "Enabled"
+      }
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/fileServices",
+      "apiVersion": "2023-05-01",
+      "name": "[format('{0}/{1}', format('st{0}mockweu', replace(parameters('klantCode'), '-', '')), 'default')]",
+      "properties": {
+        "shareDeleteRetentionPolicy": {
+          "enabled": true,
+          "days": 7
+        },
+        "protocolSettings": {
+          "smb": {}
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', format('st{0}mockweu', replace(parameters('klantCode'), '-', '')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/fileServices/shares",
+      "apiVersion": "2023-05-01",
+      "name": "[format('{0}/{1}/{2}', format('st{0}mockweu', replace(parameters('klantCode'), '-', '')), 'default', 'fslogix')]",
+      "properties": {
+        "accessTier": "TransactionOptimized",
+        "shareQuota": 100
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/fileServices', format('st{0}mockweu', replace(parameters('klantCode'), '-', '')), 'default')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Network/networkInterfaces",
+      "apiVersion": "2024-01-01",
+      "name": "[format('nic-vm-{0}-001', variables('prefix'))]",
+      "location": "[parameters('location')]",
+      "tags": "[variables('tags')]",
+      "properties": {
+        "ipConfigurations": [
+          {
+            "name": "ipconfig1",
+            "properties": {
+              "subnet": {
+                "id": "[reference(resourceId('Microsoft.Network/virtualNetworks', format('vnet-{0}', variables('prefix'))), '2024-01-01').subnets[1].id]"
+              },
+              "privateIPAllocationMethod": "Dynamic"
+            }
+          }
+        ]
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/virtualNetworks', format('vnet-{0}', variables('prefix')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Compute/virtualMachines",
+      "apiVersion": "2024-03-01",
+      "name": "[format('vm-{0}-001', variables('prefix'))]",
+      "location": "[parameters('location')]",
+      "tags": "[variables('tags')]",
+      "properties": {
+        "hardwareProfile": {
+          "vmSize": "Standard_B2s"
+        },
+        "storageProfile": {
+          "imageReference": {
+            "publisher": "MicrosoftWindowsServer",
+            "offer": "WindowsServer",
+            "sku": "2022-datacenter-g2",
+            "version": "latest"
+          },
+          "osDisk": {
+            "createOption": "FromImage",
+            "managedDisk": {
+              "storageAccountType": "StandardSSD_LRS"
+            },
+            "deleteOption": "Delete"
+          }
+        },
+        "osProfile": {
+          "computerName": "vm-mock-001",
+          "adminUsername": "[parameters('adminUsername')]",
+          "adminPassword": "[parameters('adminPassword')]",
+          "windowsConfiguration": {
+            "enableAutomaticUpdates": true,
+            "patchSettings": {
+              "patchMode": "AutomaticByOS"
+            }
+          }
+        },
+        "networkProfile": {
+          "networkInterfaces": [
+            {
+              "id": "[resourceId('Microsoft.Network/networkInterfaces', format('nic-vm-{0}-001', variables('prefix')))]",
+              "properties": {
+                "deleteOption": "Delete"
+              }
+            }
+          ]
+        },
+        "diagnosticsProfile": {
+          "bootDiagnostics": {
+            "enabled": true
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/networkInterfaces', format('nic-vm-{0}-001', variables('prefix')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.RecoveryServices/vaults/backupFabrics/protectionContainers/protectedItems",
+      "apiVersion": "2024-04-01",
+      "name": "[format('{0}/Azure/iaasvmcontainer;iaasvmcontainerv2;{1};{2}/vm;iaasvmcontainerv2;{3};{4}', format('rsv-{0}', variables('prefix')), resourceGroup().name, format('vm-{0}-001', variables('prefix')), resourceGroup().name, format('vm-{0}-001', variables('prefix')))]",
+      "location": "[parameters('location')]",
+      "tags": "[variables('tags')]",
+      "properties": {
+        "protectedItemType": "Microsoft.Compute/virtualMachines",
+        "policyId": "[resourceId('Microsoft.RecoveryServices/vaults/backupPolicies', format('rsv-{0}', variables('prefix')), 'DefaultPolicy')]",
+        "sourceResourceId": "[resourceId('Microsoft.Compute/virtualMachines', format('vm-{0}-001', variables('prefix')))]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.RecoveryServices/vaults/backupPolicies', format('rsv-{0}', variables('prefix')), 'DefaultPolicy')]",
+        "[resourceId('Microsoft.RecoveryServices/vaults', format('rsv-{0}', variables('prefix')))]",
+        "[resourceId('Microsoft.Compute/virtualMachines', format('vm-{0}-001', variables('prefix')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Network/publicIPAddresses",
+      "apiVersion": "2024-01-01",
+      "name": "[format('pip-vgw-{0}', variables('prefix'))]",
+      "location": "[parameters('location')]",
+      "tags": "[variables('tags')]",
+      "sku": {
+        "name": "Standard"
+      },
+      "properties": {
+        "publicIPAllocationMethod": "Static"
+      }
+    },
+    {
+      "type": "Microsoft.Network/virtualNetworkGateways",
+      "apiVersion": "2024-01-01",
+      "name": "[format('vgw-{0}-001', variables('prefix'))]",
+      "location": "[parameters('location')]",
+      "tags": "[variables('tags')]",
+      "properties": {
+        "ipConfigurations": [
+          {
+            "name": "gwipconfig",
+            "properties": {
+              "subnet": {
+                "id": "[reference(resourceId('Microsoft.Network/virtualNetworks', format('vnet-{0}', variables('prefix'))), '2024-01-01').subnets[0].id]"
+              },
+              "publicIPAddress": {
+                "id": "[resourceId('Microsoft.Network/publicIPAddresses', format('pip-vgw-{0}', variables('prefix')))]"
+              }
+            }
+          }
+        ],
+        "gatewayType": "Vpn",
+        "vpnType": "RouteBased",
+        "sku": {
+          "name": "Basic",
+          "tier": "Basic"
+        },
+        "enableBgp": false
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/virtualNetworks', format('vnet-{0}', variables('prefix')))]",
+        "[resourceId('Microsoft.Network/publicIPAddresses', format('pip-vgw-{0}', variables('prefix')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.DesktopVirtualization/hostPools",
+      "apiVersion": "2024-04-03",
+      "name": "[format('vdpool-{0}-001', variables('prefix'))]",
+      "location": "[parameters('location')]",
+      "tags": "[variables('tags')]",
+      "properties": {
+        "hostPoolType": "Pooled",
+        "loadBalancerType": "BreadthFirst",
+        "preferredAppGroupType": "Desktop",
+        "maxSessionLimit": 10,
+        "validationEnvironment": true,
+        "registrationInfo": {
+          "expirationTime": "[parameters('avdTokenExpiry')]",
+          "registrationTokenOperation": "Update"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "rsvId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.RecoveryServices/vaults', format('rsv-{0}', variables('prefix')))]"
+    },
+    "storageAccountId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Storage/storageAccounts', format('st{0}mockweu', replace(parameters('klantCode'), '-', '')))]"
+    },
+    "vmId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Compute/virtualMachines', format('vm-{0}-001', variables('prefix')))]"
+    },
+    "vpnGatewayId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Network/virtualNetworkGateways', format('vgw-{0}-001', variables('prefix')))]"
+    },
+    "hostPoolId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.DesktopVirtualization/hostPools', format('vdpool-{0}-001', variables('prefix')))]"
+    },
+    "vnetId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Network/virtualNetworks', format('vnet-{0}', variables('prefix')))]"
+    }
+  }
+}

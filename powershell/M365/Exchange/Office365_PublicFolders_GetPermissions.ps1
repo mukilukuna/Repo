@@ -1,5 +1,15 @@
 # Script: Office365_PublicFolders_GetPermissions.ps1
 # Purpose: Office365 PublicFolders GetPermissions
+
+# Controleer en installeer vereiste modules
+foreach ($module in @('ExchangeOnlineManagement')) {
+    if (-not (Get-Module -ListAvailable -Name $module)) {
+        Write-Host "Module '$module' wordt geïnstalleerd..." -ForegroundColor Yellow
+        Install-Module -Name $module -Force -AllowClobber -Scope CurrentUser
+    }
+    Import-Module -Name $module -ErrorAction Stop
+}
+
 Connect-ExchangeOnline
 #SMTP Adresses
 Get-MailPublicFolder | ft Alias, PrimarySmtpAddress

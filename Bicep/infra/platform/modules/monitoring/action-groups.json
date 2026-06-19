@@ -1,0 +1,124 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.44.1.10279",
+      "templateHash": "4908330287997182753"
+    }
+  },
+  "parameters": {
+    "logicAppWebhookUri": {
+      "type": "string",
+      "metadata": {
+        "description": "HTTPS webhook URI of the Autotask Logic App."
+      }
+    },
+    "onCallEmail": {
+      "type": "string",
+      "metadata": {
+        "description": "Email address of the on-call engineer (receives P1 alerts)."
+      }
+    },
+    "reportingEmail": {
+      "type": "string",
+      "metadata": {
+        "description": "Email address for reporting (receives P3 alerts)."
+      }
+    },
+    "tags": {
+      "type": "object",
+      "defaultValue": {},
+      "metadata": {
+        "description": "Resource tags to apply."
+      }
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Insights/actionGroups",
+      "apiVersion": "2023-01-01",
+      "name": "ag-monitoring-p1-weu",
+      "location": "global",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "groupShortName": "mon-p1",
+        "enabled": true,
+        "webhookReceivers": [
+          {
+            "name": "autotask-webhook-p1",
+            "serviceUri": "[parameters('logicAppWebhookUri')]",
+            "useCommonAlertSchema": true
+          }
+        ],
+        "emailReceivers": [
+          {
+            "name": "oncall-p1",
+            "emailAddress": "[parameters('onCallEmail')]",
+            "useCommonAlertSchema": true
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Insights/actionGroups",
+      "apiVersion": "2023-01-01",
+      "name": "ag-monitoring-p2-weu",
+      "location": "global",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "groupShortName": "mon-p2",
+        "enabled": true,
+        "webhookReceivers": [
+          {
+            "name": "autotask-webhook-p2",
+            "serviceUri": "[parameters('logicAppWebhookUri')]",
+            "useCommonAlertSchema": true
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Insights/actionGroups",
+      "apiVersion": "2023-01-01",
+      "name": "ag-monitoring-p3-weu",
+      "location": "global",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "groupShortName": "mon-p3",
+        "enabled": true,
+        "emailReceivers": [
+          {
+            "name": "reporting-p3",
+            "emailAddress": "[parameters('reportingEmail')]",
+            "useCommonAlertSchema": true
+          }
+        ]
+      }
+    }
+  ],
+  "outputs": {
+    "actionGroupP1Id": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of the P1 Action Group."
+      },
+      "value": "[resourceId('Microsoft.Insights/actionGroups', 'ag-monitoring-p1-weu')]"
+    },
+    "actionGroupP2Id": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of the P2 Action Group."
+      },
+      "value": "[resourceId('Microsoft.Insights/actionGroups', 'ag-monitoring-p2-weu')]"
+    },
+    "actionGroupP3Id": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of the P3 Action Group."
+      },
+      "value": "[resourceId('Microsoft.Insights/actionGroups', 'ag-monitoring-p3-weu')]"
+    }
+  }
+}

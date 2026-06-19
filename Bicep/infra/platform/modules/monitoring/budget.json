@@ -1,0 +1,109 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.44.1.10279",
+      "templateHash": "10823070654010313988"
+    }
+  },
+  "parameters": {
+    "klantCode": {
+      "type": "string",
+      "metadata": {
+        "description": "Customer identifier code."
+      }
+    },
+    "budgetAmountEur": {
+      "type": "int",
+      "defaultValue": 25,
+      "minValue": 1,
+      "metadata": {
+        "description": "Monthly budget amount in EUR."
+      }
+    },
+    "actionGroupP2Id": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of the P2 Action Group (100% alert + anomaly)."
+      }
+    },
+    "actionGroupP3Id": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of the P3 Action Group (80% and 90% alerts)."
+      }
+    },
+    "budgetStartDate": {
+      "type": "string",
+      "defaultValue": "2026-01-01",
+      "metadata": {
+        "description": "Start date for the budget period in format YYYY-MM-DD."
+      }
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Consumption/budgets",
+      "apiVersion": "2023-11-01",
+      "name": "[format('bud-monitoring-{0}', parameters('klantCode'))]",
+      "properties": {
+        "category": "Cost",
+        "amount": "[parameters('budgetAmountEur')]",
+        "timeGrain": "Monthly",
+        "timePeriod": {
+          "startDate": "[parameters('budgetStartDate')]"
+        },
+        "notifications": {
+          "At80Percent": {
+            "enabled": true,
+            "operator": "GreaterThan",
+            "threshold": 80,
+            "thresholdType": "Actual",
+            "contactEmails": [],
+            "contactGroups": [
+              "[parameters('actionGroupP3Id')]"
+            ]
+          },
+          "At90Percent": {
+            "enabled": true,
+            "operator": "GreaterThan",
+            "threshold": 90,
+            "thresholdType": "Actual",
+            "contactEmails": [],
+            "contactGroups": [
+              "[parameters('actionGroupP3Id')]"
+            ]
+          },
+          "At100Percent": {
+            "enabled": true,
+            "operator": "GreaterThan",
+            "threshold": 100,
+            "thresholdType": "Actual",
+            "contactEmails": [],
+            "contactGroups": [
+              "[parameters('actionGroupP2Id')]"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "budgetId": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of the budget."
+      },
+      "value": "[resourceId('Microsoft.Consumption/budgets', format('bud-monitoring-{0}', parameters('klantCode')))]"
+    },
+    "budgetName": {
+      "type": "string",
+      "metadata": {
+        "description": "Budget name for reference in Chore 11 calibration."
+      },
+      "value": "[format('bud-monitoring-{0}', parameters('klantCode'))]"
+    }
+  }
+}

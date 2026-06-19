@@ -1,5 +1,15 @@
 # Script: SCR_EXPORTEXCHANGE.ps1
 # Purpose: SCR EXPORTEXCHANGE
+
+# Controleer en installeer vereiste modules
+foreach ($module in @('ExchangeOnlineManagement', 'MSOnline')) {
+    if (-not (Get-Module -ListAvailable -Name $module)) {
+        Write-Host "Module '$module' wordt geïnstalleerd..." -ForegroundColor Yellow
+        Install-Module -Name $module -Force -AllowClobber -Scope CurrentUser
+    }
+    Import-Module -Name $module -ErrorAction Stop
+}
+
 $Path = "C:\Users\muki.lukuna\IT Synergy\Stichting Mano - General\Professional services\Inventarisatie\export.csv"
 
 Connect-ExchangeOnline
