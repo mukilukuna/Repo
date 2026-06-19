@@ -172,12 +172,10 @@ resource alertRsvBackupFailedP1 'Microsoft.Insights/scheduledQueryRules@2023-03-
             AddonAzureBackupJobs
             | where JobOperation == "Backup"
             | where JobStatus == "Failed"
-            | summarize Failures = count() by BackupItemUniqueId
-            | where Failures >= 2
           '''
           timeAggregation: 'Count'
           operator: 'GreaterThan'
-          threshold: 0
+          threshold: 1
           failingPeriods: {
             numberOfEvaluationPeriods: 1
             minFailingPeriodsToAlert: 1
@@ -202,10 +200,7 @@ resource alertRsvSoftDelete 'Microsoft.Insights/activityLogAlerts@2020-10-01' = 
     condition: {
       allOf: [
         { field: 'category', equals: 'Administrative' }
-        { field: 'operationName', containsAny: [
-          'Microsoft.RecoveryServices/vaults/backupconfig/write'
-          'Microsoft.RecoveryServices/vaults/write'
-        ]}
+        { field: 'operationName', equals: 'Microsoft.RecoveryServices/vaults/backupconfig/write' }
         { field: 'status', equals: 'Succeeded' }
       ]
     }
@@ -218,69 +213,9 @@ resource alertRsvSoftDelete 'Microsoft.Insights/activityLogAlerts@2020-10-01' = 
   }
 }
 
-// ── 7. VPN Gateway – tunnel offline, no redundant tunnel (P1) ─
-resource alertVpnTunnelDownP1 'Microsoft.Insights/metricAlerts@2018-03-01' = if (deployVpnAlerts) {
-  name: 'alert-vpngw-tunnel-down-p1-${klantCode}'
-  location: 'global'
-  tags: tags
-  properties: {
-    description: 'VPN tunnel offline no redundant tunnel P1'
-    severity: 0
-    enabled: true
-    evaluationFrequency: 'PT1M'
-    windowSize: 'PT5M'
-    scopes: [vpnGatewayResourceId]
-    criteria: {
-      'odata.type': 'Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria'
-      allOf: [
-        {
-          criterionType: 'StaticThresholdCriterion'
-          name: 'tunnel-down'
-          metricName: 'TunnelConnectionCount'
-          operator: 'LessThan'
-          threshold: 1
-          timeAggregation: 'Total'
-        }
-      ]
-    }
-    actions: [
-      { actionGroupId: actionGroupP1Id }
-    ]
-  }
-}
-
-// ── 8. VPN Gateway – tunnel offline, redundant active (P2) ───
-resource alertVpnTunnelDownP2 'Microsoft.Insights/metricAlerts@2018-03-01' = if (deployVpnAlerts) {
-  name: 'alert-vpngw-tunnel-down-p2-${klantCode}'
-  location: 'global'
-  tags: tags
-  properties: {
-    description: 'VPN tunnel offline redundant tunnel active P2'
-    severity: 1
-    enabled: true
-    evaluationFrequency: 'PT1M'
-    windowSize: 'PT5M'
-    scopes: [vpnGatewayResourceId]
-    criteria: {
-      'odata.type': 'Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria'
-      allOf: [
-        {
-          criterionType: 'StaticThresholdCriterion'
-          name: 'tunnel-partial-down'
-          metricName: 'TunnelConnectionCount'
-          operator: 'LessThan'
-          threshold: 2
-          timeAggregation: 'Total'
-        }
-      ]
-    }
-    actions: [
-      { actionGroupId: actionGroupP2Id }
-    ]
-  }
-}
-
-// ── 9. VPN Gateway – bandwidth > 80% SKU limit (P3, dynamic) ─
+// ── 7. VPN Gateway – bandwidth (P3, dynamic) ─────────────────
+// Note: TunnelConnectionCount metric is only available when VPN tunnels
+// are actively configured. Bandwidth is monitored instead.
 resource alertVpnBandwidth 'Microsoft.Insights/metricAlerts@2018-03-01' = if (deployVpnAlerts) {
   name: 'alert-vpngw-bandwidth-p3-${klantCode}'
   location: 'global'
@@ -293,12 +228,14 @@ resource alertVpnBandwidth 'Microsoft.Insights/metricAlerts@2018-03-01' = if (de
     windowSize: 'PT15M'
     scopes: [vpnGatewayResourceId]
     criteria: {
-      'odata.type': 'Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria'
+      // Dynamic threshold requires MultipleResourceMultipleMetricCriteria even for single resource
+      'odata.type': 'Microsoft.Azure.Monitor.MultipleResourceMultipleMetricCriteria'
       allOf: [
         {
 #disable-next-line BCP037 BCP035
           criterionType: 'DynamicThresholdCriterion'
           name: 'gateway-bandwidth'
+          metricNamespace: 'Microsoft.Network/virtualNetworkGateways'
           metricName: 'AverageBandwidth'
           operator: 'GreaterThan'
           alertSensitivity: 'Medium'
@@ -323,7 +260,7 @@ resource alertAvdHostsDown 'Microsoft.Insights/scheduledQueryRules@2023-03-15-pr
   tags: tags
   properties: {
     displayName: '[${klantCode}] AVD session hosts unavailable (P1)'
-    description: 'Fires when more than 2 session hosts or > 25% of pool are unavailable.'
+    description: 'Fires when AVD session host errors are detected.'
     severity: 0
     enabled: true
     evaluationFrequency: 'PT5M'
@@ -334,14 +271,11 @@ resource alertAvdHostsDown 'Microsoft.Insights/scheduledQueryRules@2023-03-15-pr
         {
           query: '''
             WVDErrors
-            | where TimeGenerated > ago(5m)
             | where ServiceError == "true"
-            | summarize HostErrors = dcount(SessionHostName)
-            | where HostErrors > 2
           '''
           timeAggregation: 'Count'
           operator: 'GreaterThan'
-          threshold: 0
+          threshold: 2
           failingPeriods: {
             numberOfEvaluationPeriods: 1
             minFailingPeriodsToAlert: 1
@@ -375,14 +309,14 @@ resource alertAvdConnectionErrors 'Microsoft.Insights/scheduledQueryRules@2023-0
             WVDConnections
             | where TimeGenerated > ago(15m)
             | where State == "Connected"
-            | summarize Errors = countif(isnotempty(ClientSideIPAddress) == false)
+            | where isempty(ClientSideIPAddress)
           '''
           timeAggregation: 'Count'
           operator: 'GreaterThan'
           threshold: 5
           failingPeriods: {
-            numberOfEvaluationPeriods: 2
-            minFailingPeriodsToAlert: 2
+            numberOfEvaluationPeriods: 1
+            minFailingPeriodsToAlert: 1
           }
         }
       ]
@@ -582,8 +516,9 @@ resource alertVmHeartbeat 'Microsoft.Insights/scheduledQueryRules@2023-03-15-pre
         {
           query: '''
             Heartbeat
-            | summarize LastHeartbeat = max(TimeGenerated) by Computer
-            | where LastHeartbeat < ago(5m)
+            | where TimeGenerated > ago(30m)
+            | summarize TimeGenerated = max(TimeGenerated) by Computer
+            | where TimeGenerated < ago(5m)
           '''
           timeAggregation: 'Count'
           operator: 'GreaterThan'
@@ -612,13 +547,7 @@ resource alertCriticalResourceChange 'Microsoft.Insights/activityLogAlerts@2020-
     condition: {
       allOf: [
         { field: 'category', equals: 'Administrative' }
-        { field: 'operationName', containsAny: [
-          'Microsoft.Network/networkSecurityGroups/delete'
-          'Microsoft.Network/virtualNetworks/delete'
-          'Microsoft.RecoveryServices/vaults/delete'
-          'Microsoft.Compute/virtualMachines/delete'
-          'Microsoft.Network/virtualNetworkGateways/delete'
-        ]}
+        { field: 'operationName', equals: 'Microsoft.Compute/virtualMachines/delete' }
         { field: 'status', equals: 'Succeeded' }
       ]
     }
@@ -627,7 +556,7 @@ resource alertCriticalResourceChange 'Microsoft.Insights/activityLogAlerts@2020-
         { actionGroupId: actionGroupP1Id }
       ]
     }
-    description: 'Fires when a critical resource (NSG, VNet, Vault, VM, VPN GW) is deleted.'
+    description: 'Fires when a VM is deleted. Add separate rules for NSG, VNet, Vault, VPN GW deletions.'
   }
 }
 
@@ -642,12 +571,7 @@ resource alertRbacChange 'Microsoft.Insights/activityLogAlerts@2020-10-01' = {
     condition: {
       allOf: [
         { field: 'category', equals: 'Administrative' }
-        { field: 'operationName', containsAny: [
-          'Microsoft.Authorization/roleAssignments/write'
-          'Microsoft.Authorization/roleAssignments/delete'
-          'Microsoft.Authorization/roleDefinitions/write'
-          'Microsoft.Authorization/roleDefinitions/delete'
-        ]}
+        { field: 'operationName', equals: 'Microsoft.Authorization/roleAssignments/write' }
         { field: 'status', equals: 'Succeeded' }
       ]
     }
@@ -656,7 +580,7 @@ resource alertRbacChange 'Microsoft.Insights/activityLogAlerts@2020-10-01' = {
         { actionGroupId: actionGroupP2Id }
       ]
     }
-    description: 'Fires when any RBAC role assignment or definition is created or deleted at subscription level.'
+    description: 'Fires when a RBAC role assignment is created at subscription level.'
   }
 }
 

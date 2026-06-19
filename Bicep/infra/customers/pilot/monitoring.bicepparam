@@ -26,6 +26,9 @@ param budgetAmountEur = 25
 param onCallEmail = 'oncall@itsynergy.nl'
 param reportingEmail = 'reporting@itsynergy.nl'
 
+// Policy assignments require Production subscription. Skipped for VS pilot.
+param deployPolicy = false
+
 // Lighthouse: left empty → module is skipped for pilot
 param monitoringReaderGroupId = ''
 param monitoringContributorGroupId = ''
@@ -33,5 +36,5 @@ param managingTenantId = ''
 
 // Maintenance window: Sunday 02:00–06:00 UTC (default)
 param maintenanceWindowDayOfWeek = 'Sunday'
-param maintenanceWindowStart = '02:00'
-param maintenanceWindowEnd = '06:00'
+param maintenanceWindowStart = '02:00:00'
+param maintenanceWindowEnd = '06:00:00'

@@ -43,17 +43,20 @@ param managingTenantId string = ''
 @allowed(['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'])
 param maintenanceWindowDayOfWeek string = 'Sunday'
 
-@description('Maintenance window start time (HH:mm UTC).')
-param maintenanceWindowStart string = '02:00'
+@description('Maintenance window start time (HH:mm:ss UTC).')
+param maintenanceWindowStart string = '02:00:00'
 
-@description('Maintenance window end time (HH:mm UTC).')
-param maintenanceWindowEnd string = '06:00'
+@description('Maintenance window end time (HH:mm:ss UTC).')
+param maintenanceWindowEnd string = '06:00:00'
 
 @description('Optional: Resource ID of the VPN Gateway in the monitored RG. Required for VPN Gateway metric alerts.')
 param vpnGatewayResourceId string = ''
 
 @description('Optional: Resource ID of the primary Storage Account to monitor. Required for Storage metric alerts.')
 param storageAccountResourceId string = ''
+
+@description('Set to false to skip Policy assignments (required for Visual Studio subscriptions that lack built-in DINE policies).')
+param deployPolicy bool = true
 
 // Whether to deploy Lighthouse (requires all three Lighthouse params to be non-empty)
 var deployLighthouse = !empty(monitoringReaderGroupId) && !empty(monitoringContributorGroupId) && !empty(managingTenantId)
@@ -156,7 +159,7 @@ var monitoredSubId = split(monitoredResourceGroupId, '/')[2]
 var monitoredRgName = split(monitoredResourceGroupId, '/')[4]
 
 // ── 8. Policy ─────────────────────────────────────────────────
-module policy './policy.bicep' = {
+module policy './policy.bicep' = if (deployPolicy) {
   name: 'deploy-policy-${klantCode}'
   scope: resourceGroup(monitoredSubId, monitoredRgName)
   params: {

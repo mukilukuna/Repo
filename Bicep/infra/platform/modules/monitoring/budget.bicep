@@ -25,7 +25,7 @@ param actionGroupP2Id string
 param actionGroupP3Id string
 
 @description('Start date for the budget period in format YYYY-MM-DD.')
-param budgetStartDate string = '2026-01-01'
+param budgetStartDate string = '2026-06-01'
 
 // ── Monitoring Resource Group Budget ─────────────────────────
 // Scope: current resource group (the monitoring RG, not the whole subscription)

@@ -12,11 +12,11 @@ param targetResourceGroupId string
 @description('Customer identifier code.')
 param klantCode string
 
-@description('Maintenance window start time (HH:mm, UTC).')
-param maintenanceWindowStart string = '02:00'
+@description('Maintenance window start time (HH:mm:ss, UTC).')
+param maintenanceWindowStart string = '02:00:00'
 
-@description('Maintenance window end time (HH:mm, UTC).')
-param maintenanceWindowEnd string = '06:00'
+@description('Maintenance window end time (HH:mm:ss, UTC).')
+param maintenanceWindowEnd string = '06:00:00'
 
 @description('Day of week for the weekly maintenance window.')
 @allowed(['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'])
@@ -48,7 +48,7 @@ resource apr 'Microsoft.AlertsManagement/actionRules@2021-08-08' = {
     }
     actions: [
       {
-        actionType: 'Suppression'
+        actionType: 'RemoveAllActionGroups'
       }
     ]
   }

@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.44.1.10279",
-      "templateHash": "15013341394595336740"
+      "templateHash": "9226003558791819774"
     }
   },
   "parameters": {
@@ -102,16 +102,16 @@
     },
     "maintenanceWindowStart": {
       "type": "string",
-      "defaultValue": "02:00",
+      "defaultValue": "02:00:00",
       "metadata": {
-        "description": "Maintenance window start time (HH:mm UTC)."
+        "description": "Maintenance window start time (HH:mm:ss UTC)."
       }
     },
     "maintenanceWindowEnd": {
       "type": "string",
-      "defaultValue": "06:00",
+      "defaultValue": "06:00:00",
       "metadata": {
-        "description": "Maintenance window end time (HH:mm UTC)."
+        "description": "Maintenance window end time (HH:mm:ss UTC)."
       }
     },
     "vpnGatewayResourceId": {
@@ -126,6 +126,13 @@
       "defaultValue": "",
       "metadata": {
         "description": "Optional: Resource ID of the primary Storage Account to monitor. Required for Storage metric alerts."
+      }
+    },
+    "deployPolicy": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Set to false to skip Policy assignments (required for Visual Studio subscriptions that lack built-in DINE policies)."
       }
     }
   },
@@ -327,7 +334,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.44.1.10279",
-              "templateHash": "1998472236588199761"
+              "templateHash": "4093054650352245033"
             }
           },
           "parameters": {
@@ -366,8 +373,7 @@
             }
           },
           "variables": {
-            "isManagedOrAbove": "[not(equals(parameters('tier'), 'Essential'))]",
-            "isAdvanced": "[equals(parameters('tier'), 'Advanced')]"
+            "isManagedOrAbove": "[not(equals(parameters('tier'), 'Essential'))]"
           },
           "resources": [
             {
@@ -437,98 +443,6 @@
                   }
                 ]
               }
-            },
-            {
-              "condition": "[variables('isManagedOrAbove')]",
-              "type": "Microsoft.Insights/dataCollectionRules",
-              "apiVersion": "2023-03-11",
-              "name": "dcr-storage-managed-weu",
-              "location": "[parameters('location')]",
-              "tags": "[parameters('tags')]",
-              "properties": {
-                "description": "Collect Storage account capacity and transaction metrics.",
-                "dataSources": {
-                  "performanceCounters": []
-                },
-                "destinations": {
-                  "logAnalytics": [
-                    {
-                      "name": "workspace",
-                      "workspaceResourceId": "[parameters('workspaceId')]"
-                    }
-                  ]
-                },
-                "dataFlows": []
-              }
-            },
-            {
-              "condition": "[variables('isManagedOrAbove')]",
-              "type": "Microsoft.Insights/dataCollectionRules",
-              "apiVersion": "2023-03-11",
-              "name": "dcr-rsv-managed-weu",
-              "location": "[parameters('location')]",
-              "tags": "[parameters('tags')]",
-              "properties": {
-                "description": "Collect Recovery Services Vault backup diagnostic data (AzureBackupReport).",
-                "dataSources": {
-                  "performanceCounters": []
-                },
-                "destinations": {
-                  "logAnalytics": [
-                    {
-                      "name": "workspace",
-                      "workspaceResourceId": "[parameters('workspaceId')]"
-                    }
-                  ]
-                },
-                "dataFlows": []
-              }
-            },
-            {
-              "condition": "[variables('isManagedOrAbove')]",
-              "type": "Microsoft.Insights/dataCollectionRules",
-              "apiVersion": "2023-03-11",
-              "name": "dcr-vpngw-managed-weu",
-              "location": "[parameters('location')]",
-              "tags": "[parameters('tags')]",
-              "properties": {
-                "description": "Collect VPN Gateway diagnostic logs (Gateway + Tunnel).",
-                "dataSources": {
-                  "performanceCounters": []
-                },
-                "destinations": {
-                  "logAnalytics": [
-                    {
-                      "name": "workspace",
-                      "workspaceResourceId": "[parameters('workspaceId')]"
-                    }
-                  ]
-                },
-                "dataFlows": []
-              }
-            },
-            {
-              "condition": "[variables('isAdvanced')]",
-              "type": "Microsoft.Insights/dataCollectionRules",
-              "apiVersion": "2023-03-11",
-              "name": "dcr-avd-advanced-weu",
-              "location": "[parameters('location')]",
-              "tags": "[parameters('tags')]",
-              "properties": {
-                "description": "Collect AVD host pool diagnostic data (connections, errors, registrations).",
-                "dataSources": {
-                  "performanceCounters": []
-                },
-                "destinations": {
-                  "logAnalytics": [
-                    {
-                      "name": "workspace",
-                      "workspaceResourceId": "[parameters('workspaceId')]"
-                    }
-                  ]
-                },
-                "dataFlows": []
-              }
             }
           ],
           "outputs": {
@@ -542,30 +456,30 @@
             "dcrStorageId": {
               "type": "string",
               "metadata": {
-                "description": "Resource ID of the Storage DCR."
+                "description": "Resource ID of the Storage DCR (N/A – uses Diagnostic Settings)."
               },
-              "value": "[if(variables('isManagedOrAbove'), resourceId('Microsoft.Insights/dataCollectionRules', 'dcr-storage-managed-weu'), '')]"
+              "value": ""
             },
             "dcrRsvId": {
               "type": "string",
               "metadata": {
-                "description": "Resource ID of the RSV DCR."
+                "description": "Resource ID of the RSV DCR (N/A – uses Diagnostic Settings)."
               },
-              "value": "[if(variables('isManagedOrAbove'), resourceId('Microsoft.Insights/dataCollectionRules', 'dcr-rsv-managed-weu'), '')]"
+              "value": ""
             },
             "dcrVpnId": {
               "type": "string",
               "metadata": {
-                "description": "Resource ID of the VPN Gateway DCR."
+                "description": "Resource ID of the VPN Gateway DCR (N/A – uses Diagnostic Settings)."
               },
-              "value": "[if(variables('isManagedOrAbove'), resourceId('Microsoft.Insights/dataCollectionRules', 'dcr-vpngw-managed-weu'), '')]"
+              "value": ""
             },
             "dcrAvdId": {
               "type": "string",
               "metadata": {
-                "description": "Resource ID of the AVD DCR."
+                "description": "Resource ID of the AVD DCR (N/A – session hosts use VM DCR)."
               },
-              "value": "[if(variables('isAdvanced'), resourceId('Microsoft.Insights/dataCollectionRules', 'dcr-avd-advanced-weu'), '')]"
+              "value": ""
             }
           }
         }
@@ -973,7 +887,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.44.1.10279",
-              "templateHash": "8764215766636782416"
+              "templateHash": "13838469205307827355"
             }
           },
           "parameters": {
@@ -1224,10 +1138,10 @@
                 "criteria": {
                   "allOf": [
                     {
-                      "query": "            AddonAzureBackupJobs\r\n            | where JobOperation == \"Backup\"\r\n            | where JobStatus == \"Failed\"\r\n            | summarize Failures = count() by BackupItemUniqueId\r\n            | where Failures >= 2\r\n          ",
+                      "query": "            AddonAzureBackupJobs\r\n            | where JobOperation == \"Backup\"\r\n            | where JobStatus == \"Failed\"\r\n          ",
                       "timeAggregation": "Count",
                       "operator": "GreaterThan",
-                      "threshold": 0,
+                      "threshold": 1,
                       "failingPeriods": {
                         "numberOfEvaluationPeriods": 1,
                         "minFailingPeriodsToAlert": 1
@@ -1262,10 +1176,7 @@
                     },
                     {
                       "field": "operationName",
-                      "containsAny": [
-                        "Microsoft.RecoveryServices/vaults/backupconfig/write",
-                        "Microsoft.RecoveryServices/vaults/write"
-                      ]
+                      "equals": "Microsoft.RecoveryServices/vaults/backupconfig/write"
                     },
                     {
                       "field": "status",
@@ -1287,78 +1198,6 @@
               "condition": "[variables('deployVpnAlerts')]",
               "type": "Microsoft.Insights/metricAlerts",
               "apiVersion": "2018-03-01",
-              "name": "[format('alert-vpngw-tunnel-down-p1-{0}', parameters('klantCode'))]",
-              "location": "global",
-              "tags": "[parameters('tags')]",
-              "properties": {
-                "description": "VPN tunnel offline no redundant tunnel P1",
-                "severity": 0,
-                "enabled": true,
-                "evaluationFrequency": "PT1M",
-                "windowSize": "PT5M",
-                "scopes": [
-                  "[parameters('vpnGatewayResourceId')]"
-                ],
-                "criteria": {
-                  "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
-                  "allOf": [
-                    {
-                      "criterionType": "StaticThresholdCriterion",
-                      "name": "tunnel-down",
-                      "metricName": "TunnelConnectionCount",
-                      "operator": "LessThan",
-                      "threshold": 1,
-                      "timeAggregation": "Total"
-                    }
-                  ]
-                },
-                "actions": [
-                  {
-                    "actionGroupId": "[parameters('actionGroupP1Id')]"
-                  }
-                ]
-              }
-            },
-            {
-              "condition": "[variables('deployVpnAlerts')]",
-              "type": "Microsoft.Insights/metricAlerts",
-              "apiVersion": "2018-03-01",
-              "name": "[format('alert-vpngw-tunnel-down-p2-{0}', parameters('klantCode'))]",
-              "location": "global",
-              "tags": "[parameters('tags')]",
-              "properties": {
-                "description": "VPN tunnel offline redundant tunnel active P2",
-                "severity": 1,
-                "enabled": true,
-                "evaluationFrequency": "PT1M",
-                "windowSize": "PT5M",
-                "scopes": [
-                  "[parameters('vpnGatewayResourceId')]"
-                ],
-                "criteria": {
-                  "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
-                  "allOf": [
-                    {
-                      "criterionType": "StaticThresholdCriterion",
-                      "name": "tunnel-partial-down",
-                      "metricName": "TunnelConnectionCount",
-                      "operator": "LessThan",
-                      "threshold": 2,
-                      "timeAggregation": "Total"
-                    }
-                  ]
-                },
-                "actions": [
-                  {
-                    "actionGroupId": "[parameters('actionGroupP2Id')]"
-                  }
-                ]
-              }
-            },
-            {
-              "condition": "[variables('deployVpnAlerts')]",
-              "type": "Microsoft.Insights/metricAlerts",
-              "apiVersion": "2018-03-01",
               "name": "[format('alert-vpngw-bandwidth-p3-{0}', parameters('klantCode'))]",
               "location": "global",
               "tags": "[parameters('tags')]",
@@ -1372,11 +1211,12 @@
                   "[parameters('vpnGatewayResourceId')]"
                 ],
                 "criteria": {
-                  "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
+                  "odata.type": "Microsoft.Azure.Monitor.MultipleResourceMultipleMetricCriteria",
                   "allOf": [
                     {
                       "criterionType": "DynamicThresholdCriterion",
                       "name": "gateway-bandwidth",
+                      "metricNamespace": "Microsoft.Network/virtualNetworkGateways",
                       "metricName": "AverageBandwidth",
                       "operator": "GreaterThan",
                       "alertSensitivity": "Medium",
@@ -1404,7 +1244,7 @@
               "tags": "[parameters('tags')]",
               "properties": {
                 "displayName": "[format('[{0}] AVD session hosts unavailable (P1)', parameters('klantCode'))]",
-                "description": "Fires when more than 2 session hosts or > 25% of pool are unavailable.",
+                "description": "Fires when AVD session host errors are detected.",
                 "severity": 0,
                 "enabled": true,
                 "evaluationFrequency": "PT5M",
@@ -1415,10 +1255,10 @@
                 "criteria": {
                   "allOf": [
                     {
-                      "query": "            WVDErrors\r\n            | where TimeGenerated > ago(5m)\r\n            | where ServiceError == \"true\"\r\n            | summarize HostErrors = dcount(SessionHostName)\r\n            | where HostErrors > 2\r\n          ",
+                      "query": "            WVDErrors\r\n            | where ServiceError == \"true\"\r\n          ",
                       "timeAggregation": "Count",
                       "operator": "GreaterThan",
-                      "threshold": 0,
+                      "threshold": 2,
                       "failingPeriods": {
                         "numberOfEvaluationPeriods": 1,
                         "minFailingPeriodsToAlert": 1
@@ -1453,13 +1293,13 @@
                 "criteria": {
                   "allOf": [
                     {
-                      "query": "            WVDConnections\r\n            | where TimeGenerated > ago(15m)\r\n            | where State == \"Connected\"\r\n            | summarize Errors = countif(isnotempty(ClientSideIPAddress) == false)\r\n          ",
+                      "query": "            WVDConnections\r\n            | where TimeGenerated > ago(15m)\r\n            | where State == \"Connected\"\r\n            | where isempty(ClientSideIPAddress)\r\n          ",
                       "timeAggregation": "Count",
                       "operator": "GreaterThan",
                       "threshold": 5,
                       "failingPeriods": {
-                        "numberOfEvaluationPeriods": 2,
-                        "minFailingPeriodsToAlert": 2
+                        "numberOfEvaluationPeriods": 1,
+                        "minFailingPeriodsToAlert": 1
                       }
                     }
                   ]
@@ -1682,7 +1522,7 @@
                 "criteria": {
                   "allOf": [
                     {
-                      "query": "            Heartbeat\r\n            | summarize LastHeartbeat = max(TimeGenerated) by Computer\r\n            | where LastHeartbeat < ago(5m)\r\n          ",
+                      "query": "            Heartbeat\r\n            | where TimeGenerated > ago(30m)\r\n            | summarize TimeGenerated = max(TimeGenerated) by Computer\r\n            | where TimeGenerated < ago(5m)\r\n          ",
                       "timeAggregation": "Count",
                       "operator": "GreaterThan",
                       "threshold": 0,
@@ -1719,13 +1559,7 @@
                     },
                     {
                       "field": "operationName",
-                      "containsAny": [
-                        "Microsoft.Network/networkSecurityGroups/delete",
-                        "Microsoft.Network/virtualNetworks/delete",
-                        "Microsoft.RecoveryServices/vaults/delete",
-                        "Microsoft.Compute/virtualMachines/delete",
-                        "Microsoft.Network/virtualNetworkGateways/delete"
-                      ]
+                      "equals": "Microsoft.Compute/virtualMachines/delete"
                     },
                     {
                       "field": "status",
@@ -1740,7 +1574,7 @@
                     }
                   ]
                 },
-                "description": "Fires when a critical resource (NSG, VNet, Vault, VM, VPN GW) is deleted."
+                "description": "Fires when a VM is deleted. Add separate rules for NSG, VNet, Vault, VPN GW deletions."
               }
             },
             {
@@ -1762,12 +1596,7 @@
                     },
                     {
                       "field": "operationName",
-                      "containsAny": [
-                        "Microsoft.Authorization/roleAssignments/write",
-                        "Microsoft.Authorization/roleAssignments/delete",
-                        "Microsoft.Authorization/roleDefinitions/write",
-                        "Microsoft.Authorization/roleDefinitions/delete"
-                      ]
+                      "equals": "Microsoft.Authorization/roleAssignments/write"
                     },
                     {
                       "field": "status",
@@ -1782,7 +1611,7 @@
                     }
                   ]
                 },
-                "description": "Fires when any RBAC role assignment or definition is created or deleted at subscription level."
+                "description": "Fires when a RBAC role assignment is created at subscription level."
               }
             },
             {
@@ -1866,7 +1695,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.44.1.10279",
-              "templateHash": "8769741278950254833"
+              "templateHash": "14974489092475825908"
             }
           },
           "parameters": {
@@ -1884,16 +1713,16 @@
             },
             "maintenanceWindowStart": {
               "type": "string",
-              "defaultValue": "02:00",
+              "defaultValue": "02:00:00",
               "metadata": {
-                "description": "Maintenance window start time (HH:mm, UTC)."
+                "description": "Maintenance window start time (HH:mm:ss, UTC)."
               }
             },
             "maintenanceWindowEnd": {
               "type": "string",
-              "defaultValue": "06:00",
+              "defaultValue": "06:00:00",
               "metadata": {
-                "description": "Maintenance window end time (HH:mm, UTC)."
+                "description": "Maintenance window end time (HH:mm:ss, UTC)."
               }
             },
             "maintenanceWindowDayOfWeek": {
@@ -1948,7 +1777,7 @@
                 },
                 "actions": [
                   {
-                    "actionType": "Suppression"
+                    "actionType": "RemoveAllActionGroups"
                   }
                 ]
               }
@@ -1996,7 +1825,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.44.1.10279",
-              "templateHash": "10823070654010313988"
+              "templateHash": "7837186086225792688"
             }
           },
           "parameters": {
@@ -2028,7 +1857,7 @@
             },
             "budgetStartDate": {
               "type": "string",
-              "defaultValue": "2026-01-01",
+              "defaultValue": "2026-06-01",
               "metadata": {
                 "description": "Start date for the budget period in format YYYY-MM-DD."
               }
@@ -2104,6 +1933,7 @@
       ]
     },
     "policy": {
+      "condition": "[parameters('deployPolicy')]",
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "[format('deploy-policy-{0}', parameters('klantCode'))]",
