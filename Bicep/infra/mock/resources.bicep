@@ -244,12 +244,16 @@ resource vpnPublicIp 'Microsoft.Network/publicIPAddresses@2024-01-01' = {
   sku: {
     name: 'Standard'
   }
+  zones: ['1', '2', '3']
   properties: {
     publicIPAllocationMethod: 'Static'
   }
 }
 
-// ── VPN Gateway (Basic SKU – mock only, see SKU note above) ──
+// ── VPN Gateway (VpnGw1) ─────────────────────────────────────────────
+// SKU: Basic is deprecated in West Europe (vereist zones maar ondersteunt ze niet).
+// VpnGw1 is de laagste werkende SKU met Standard IP + zones. Kosten ~€140/month.
+// Verwijder na de pilotperiode als kostenbesparing gewenst is.
 resource vpnGateway 'Microsoft.Network/virtualNetworkGateways@2024-01-01' = {
   name: 'vgw-${prefix}-001'
   location: location
@@ -271,8 +275,8 @@ resource vpnGateway 'Microsoft.Network/virtualNetworkGateways@2024-01-01' = {
     gatewayType: 'Vpn'
     vpnType: 'RouteBased'
     sku: {
-      name: 'Basic'
-      tier: 'Basic'
+      name: 'VpnGw1AZ'
+      tier: 'VpnGw1AZ'
     }
     enableBgp: false
   }

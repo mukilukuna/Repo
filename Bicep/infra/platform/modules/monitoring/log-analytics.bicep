@@ -61,12 +61,7 @@ resource capWarningAlert 'Microsoft.Insights/scheduledQueryRules@2023-03-15-prev
     criteria: {
       allOf: [
         {
-          query: '''
-            Usage
-            | where TimeGenerated > ago(1d)
-            | summarize IngestedGB = sum(Quantity) / 1000
-            | where IngestedGB >= ${dailyCapGb} * 0.8
-          '''
+          query: 'Usage | where TimeGenerated > ago(1d) | summarize IngestedGB = sum(Quantity) / 1000 | where IngestedGB >= ${dailyCapGb} * 0.8'
           timeAggregation: 'Count'
           operator: 'GreaterThanOrEqual'
           threshold: 1

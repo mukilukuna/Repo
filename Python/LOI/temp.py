@@ -1,20 +1,18 @@
-import os
+a = 6    # int
+b = 5.5  # float
+c = 'Tuk' # str
+d = 'je'  # str
+e = '3'   # str (let op: GEEN int!)
+f = []   # lege list
+g = tuple(f) # lege tuple: ()
+h = 17   # int
 
-# Definieer de map waar je doorheen wilt gaan
-directory = r"C:\Users\mukil\OneDrive\Documenten\Vs Code\Devops\Devops\Python\LOI\Examen"
 
-# Loop door elk bestand in de opgegeven map
-for filename in os.listdir(directory):
-    # Maak het volledige pad naar het bestand
-    old_file_path = os.path.join(directory, filename)
-
-    # Controleer of het een bestand is en geen map
-    if os.path.isfile(old_file_path):
-        # Maak de nieuwe bestandsnaam met de .py extensie
-        new_file_path = old_file_path + '.py'
-
-        # Hernoem het bestand naar de nieuwe naam met de .py extensie
-        os.rename(old_file_path, new_file_path)
-        print(f"Het bestand {filename} is hernoemd naar {filename}.py")
-
-print("Alle bestanden zijn succesvol hernoemd.")
+# a / int (b) = 1.2
+# type (h % b) = Class float
+# c * 2 + e = 'TukTuk3'
+# c * e + 2 = fout
+# c + str (d) = 
+# b * 10 ** 3
+# str (b) < e
+# g.append (7)

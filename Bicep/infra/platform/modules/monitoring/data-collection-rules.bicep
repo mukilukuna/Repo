@@ -22,7 +22,6 @@ param tags object = {}
 
 // Managed or Advanced tier is needed for DCRs beyond Activity Log
 var isManagedOrAbove = tier != 'Essential'
-var isAdvanced = tier == 'Advanced'
 
 // ── VM: Performance counters + Windows Event Log ──────────────
 resource dcrVm 'Microsoft.Insights/dataCollectionRules@2023-03-11' = if (isManagedOrAbove) {
@@ -79,108 +78,20 @@ resource dcrVm 'Microsoft.Insights/dataCollectionRules@2023-03-11' = if (isManag
   }
 }
 
-// ── Storage account: capacity + transaction metrics ────────────
-resource dcrStorage 'Microsoft.Insights/dataCollectionRules@2023-03-11' = if (isManagedOrAbove) {
-  name: 'dcr-storage-managed-weu'
-  location: location
-  tags: tags
-  properties: {
-    description: 'Collect Storage account capacity and transaction metrics.'
-    dataSources: {
-      // Storage metrics are typically sent via Diagnostic Settings rather than DCR agents.
-      // This DCR defines the destination; Policy (Chore 8) enforces the diagnostic setting.
-      performanceCounters: []
-    }
-    destinations: {
-      logAnalytics: [
-        {
-          name: 'workspace'
-          workspaceResourceId: workspaceId
-        }
-      ]
-    }
-    dataFlows: []
-  }
-}
-
-// ── Recovery Services Vault: AzureBackupReport ────────────────
-resource dcrRsv 'Microsoft.Insights/dataCollectionRules@2023-03-11' = if (isManagedOrAbove) {
-  name: 'dcr-rsv-managed-weu'
-  location: location
-  tags: tags
-  properties: {
-    description: 'Collect Recovery Services Vault backup diagnostic data (AzureBackupReport).'
-    dataSources: {
-      performanceCounters: []
-    }
-    destinations: {
-      logAnalytics: [
-        {
-          name: 'workspace'
-          workspaceResourceId: workspaceId
-        }
-      ]
-    }
-    dataFlows: []
-  }
-}
-
-// ── VPN Gateway: GatewayDiagnosticLog + TunnelDiagnosticLog ──
-resource dcrVpn 'Microsoft.Insights/dataCollectionRules@2023-03-11' = if (isManagedOrAbove) {
-  name: 'dcr-vpngw-managed-weu'
-  location: location
-  tags: tags
-  properties: {
-    description: 'Collect VPN Gateway diagnostic logs (Gateway + Tunnel).'
-    dataSources: {
-      performanceCounters: []
-    }
-    destinations: {
-      logAnalytics: [
-        {
-          name: 'workspace'
-          workspaceResourceId: workspaceId
-        }
-      ]
-    }
-    dataFlows: []
-  }
-}
-
-// ── AVD host pool: WVDConnections + WVDErrors + WVDHostRegistrations
-resource dcrAvd 'Microsoft.Insights/dataCollectionRules@2023-03-11' = if (isAdvanced) {
-  name: 'dcr-avd-advanced-weu'
-  location: location
-  tags: tags
-  properties: {
-    description: 'Collect AVD host pool diagnostic data (connections, errors, registrations).'
-    dataSources: {
-      performanceCounters: []
-    }
-    destinations: {
-      logAnalytics: [
-        {
-          name: 'workspace'
-          workspaceResourceId: workspaceId
-        }
-      ]
-    }
-    dataFlows: []
-  }
-}
-
 // ── Outputs (DCR IDs used by policy.bicep) ────────────────────
 @description('Resource ID of the VM DCR.')
 output dcrVmId string = isManagedOrAbove ? dcrVm.id : ''
 
-@description('Resource ID of the Storage DCR.')
-output dcrStorageId string = isManagedOrAbove ? dcrStorage.id : ''
+// Storage, RSV, VPN GW and AVD use Diagnostic Settings (via Policy),
+// not agent-based DCRs. Return empty strings for backward compat.
+@description('Resource ID of the Storage DCR (N/A – uses Diagnostic Settings).')
+output dcrStorageId string = ''
 
-@description('Resource ID of the RSV DCR.')
-output dcrRsvId string = isManagedOrAbove ? dcrRsv.id : ''
+@description('Resource ID of the RSV DCR (N/A – uses Diagnostic Settings).')
+output dcrRsvId string = ''
 
-@description('Resource ID of the VPN Gateway DCR.')
-output dcrVpnId string = isManagedOrAbove ? dcrVpn.id : ''
+@description('Resource ID of the VPN Gateway DCR (N/A – uses Diagnostic Settings).')
+output dcrVpnId string = ''
 
-@description('Resource ID of the AVD DCR.')
-output dcrAvdId string = isAdvanced ? dcrAvd.id : ''
+@description('Resource ID of the AVD DCR (N/A – session hosts use VM DCR).')
+output dcrAvdId string = ''

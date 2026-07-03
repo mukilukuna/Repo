@@ -12,11 +12,11 @@ param targetResourceGroupId string
 @description('Customer identifier code.')
 param klantCode string
 
-@description('Maintenance window start time (HH:mm, UTC).')
-param maintenanceWindowStart string = '02:00'
+@description('Maintenance window start time (HH:mm:ss, UTC).')
+param maintenanceWindowStart string = '02:00:00'
 
-@description('Maintenance window end time (HH:mm, UTC).')
-param maintenanceWindowEnd string = '06:00'
+@description('Maintenance window end time (HH:mm:ss, UTC).')
+param maintenanceWindowEnd string = '06:00:00'
 
 @description('Day of week for the weekly maintenance window.')
 @allowed(['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'])
@@ -27,14 +27,14 @@ param tags object = {}
 
 // ── Alert Processing Rule – maintenance suppression ───────────
 // APRs must always be deployed in the 'global' location.
-resource apr 'Microsoft.AlertsManagement/actionRules@2023-05-01-preview' = {
+resource apr 'Microsoft.AlertsManagement/actionRules@2021-08-08' = {
   name: 'apr-maintenance-${klantCode}'
   location: 'global'
   tags: tags
   properties: {
-    description: 'Suppresses all alerts during the weekly maintenance window (${maintenanceWindowDayOfWeek} ${maintenanceWindowStart}–${maintenanceWindowEnd} UTC).'
+    description: 'Suppresses all alerts during the weekly maintenance window (${maintenanceWindowDayOfWeek} ${maintenanceWindowStart}‚${maintenanceWindowEnd} UTC).'
     scopes: [targetResourceGroupId]
-    enabled: true
+    status: 'Enabled'
     schedule: {
       timeZone: 'UTC'
       recurrences: [
@@ -48,7 +48,7 @@ resource apr 'Microsoft.AlertsManagement/actionRules@2023-05-01-preview' = {
     }
     actions: [
       {
-        actionType: 'Suppression'
+        actionType: 'RemoveAllActionGroups'
       }
     ]
   }
