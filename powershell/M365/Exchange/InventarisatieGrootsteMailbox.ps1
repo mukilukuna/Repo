@@ -27,7 +27,7 @@ $mailboxDetails = foreach ($mailbox in $mailboxes) {
 }
 
 # Resultaten naar CSV exporteren
-$path = "C:\Temp\Xtra\mailboxDetails.csv"
+$path = "C:\Temp\mailboxDetails.csv"
 $mailboxDetails | Export-Csv -Path $path -NoTypeInformation -Encoding UTF8
 
 # Verbinding met Exchange Online verbreken

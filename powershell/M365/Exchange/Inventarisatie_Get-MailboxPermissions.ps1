@@ -7,13 +7,40 @@ foreach ($module in @('ExchangeOnlineManagement')) {
     Import-Module -Name $module -ErrorAction Stop
 }
 
+# Gebruik de bestaande Exchange Online-verbinding of meld interactief aan.
+$ActiveConnection = $null
+if (Get-Command -Name Get-ConnectionInformation -ErrorAction SilentlyContinue) {
+    $ActiveConnection = Get-ConnectionInformation -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.State -eq 'Connected' -and
+            $_.TokenStatus -eq 'Active' -and
+            $_.IsEopSession -ne $true
+        } |
+        Select-Object -First 1
+}
+
+if (-not $ActiveConnection) {
+    Write-Host "Connecting to Exchange Online..." -ForegroundColor Cyan
+    Connect-ExchangeOnline -ShowBanner:$false -ErrorAction Stop
+}
+
 # Script: Office365_Tenant_Get-MailboxPermissions.ps1
 # Purpose: Office365 Tenant Get MailboxPermissions
 Write-Host "Fetching mailboxes"
-$Mbx = Get-ExoMailbox -RecipientTypeDetails UserMailbox, SharedMailbox -ResultSize Unlimited -PropertySet Delivery -Properties RecipientTypeDetails, DisplayName | Select DisplayName, UserPrincipalName, RecipientTypeDetails, GrantSendOnBehalfTo
-If ($Mbx.Count -eq 0) { 
-    Write-Error "No mailboxes found. Script exiting..." -ErrorAction Stop 
-} 
+try {
+    $Mbx = @(
+        Get-ExoMailbox -RecipientTypeDetails UserMailbox, SharedMailbox -ResultSize Unlimited -PropertySet Delivery -Properties RecipientTypeDetails, DisplayName -ErrorAction Stop |
+            Select-Object DisplayName, UserPrincipalName, RecipientTypeDetails, GrantSendOnBehalfTo
+    )
+}
+catch {
+    throw "Mailboxes ophalen uit Exchange Online is mislukt: $($_.Exception.Message)"
+}
+
+if ($Mbx.Count -eq 0) {
+    throw "Geen gebruikers- of gedeelde mailboxen gevonden. Script wordt gestopt."
+}
+
 $Report = [System.Collections.Generic.List[Object]]::new() # Create output file 
 $ProgressDelta = 100 / ($Mbx.count); $PercentComplete = 0; $MbxNumber = 0
 ForEach ($M in $Mbx) {
@@ -67,5 +94,15 @@ ForEach ($M in $Mbx) {
     }
 }
 
-$Report | Sort -Property @{Expression = { $_.MailboxType }; Ascending = $False }, Mailbox | Export-CSV c:\temp\MailboxPermissions.csv -NoTypeInformation -Encoding UTF8
-Write-Host "All done." $Mbx.Count "mailboxes scanned."
+$OutputPath = 'C:\temp\MailboxPermissions.csv'
+$OutputDirectory = Split-Path -Parent $OutputPath
+if (-not (Test-Path -LiteralPath $OutputDirectory)) {
+    New-Item -ItemType Directory -Path $OutputDirectory -Force -ErrorAction Stop | Out-Null
+}
+
+$Report |
+    Sort-Object -Property @{Expression = { $_.MailboxType }; Ascending = $false }, Mailbox |
+    Export-Csv -LiteralPath $OutputPath -NoTypeInformation -Encoding UTF8
+
+Write-Host "All done. $($Mbx.Count) mailboxes scanned."
+Write-Host "Report saved to: $OutputPath"
