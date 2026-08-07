@@ -1,242 +1,689 @@
+#requires -Version 5.1
+
 <#
 .SYNOPSIS
-  Create report of all mailbox and archive sizes
+    Maakt een rapport van mailbox- en archiefgroottes in Exchange Online.
+
 .DESCRIPTION
-  Collects all the mailbox and archive stats from Exchange Online users. By default it will also
-  include the Shared Mailboxes. 
+    Verzamelt mailboxstatistieken van gebruikersmailboxen en gedeelde
+    mailboxen en exporteert het resultaat automatisch naar C:\Temp.
+
+    De Exchange Online-aanmelding wordt interactief geopend.
+    Er hoeft geen AdminUPN vooraf te worden opgegeven.
+
 .EXAMPLE
-  Get-MailboxSizeReport.ps1
-  Generate the mailbox size report with Shared mailboxes, mailbox archive.
+    .\Inventarisatie_MailboxSize.ps1
+
+    Haalt gebruikersmailboxen en gedeelde mailboxen op, inclusief archieven.
+
 .EXAMPLE
-  Get-MailboxSizeReport.ps1 -sharedMailboxes only
-  Get only the shared mailboxes
+    .\Inventarisatie_MailboxSize.ps1 -SharedMailboxes only
+
+    Haalt alleen gedeelde mailboxen op.
+
 .EXAMPLE
-  Get-MailboxSizeReport.ps1 -sharedMailboxes no
-  Get only the user mailboxes
+    .\Inventarisatie_MailboxSize.ps1 -SharedMailboxes no
+
+    Haalt alleen gebruikersmailboxen op.
+
 .EXAMPLE
-  Get-MailboxSizeReport.ps1 -archive:$false
-  Get the mailbox size without the archive mailboxes
-.EXAMPLE
-  Get-MailboxSizeReport.ps1 -CSVpath c:\temp\report.csv
-  Store CSV report in c:\temp\report.csv
-.EXAMPLE
-  Get-MailboxSizeReport.ps1 | Format-Table
-  Print results for mailboxes in the console and format as table
-.NOTES
-  Version:        1.4
-  Author:         R. Mens - LazyAdmin.nl
-  Modified By:    Bradley Wyatt - The Lazy Administrator
-  Creation Date:  23 sep 2021
-  Modified Date:  14 sep 2022
-  Purpose/Change: Check if we have an archive before running the numbers.
-  Link:           https://lazyadmin.nl/powershell/office-365-mailbox-size-report
+    .\Inventarisatie_MailboxSize.ps1 -Archive:$false
+
+    Haalt mailboxgegevens op zonder archiefstatistieken.
 #>
 
+[CmdletBinding()]
 param(
-  [Parameter(
-    Mandatory = $true,
-    HelpMessage = "Enter the Exchange Online or Global admin username"
+  [Parameter(Mandatory = $false)]
+  [ValidateSet(
+    'no',
+    'only',
+    'include'
   )]
-  [string]$adminUPN,
+  [string]$SharedMailboxes = 'include',
 
-  [Parameter(
-    Mandatory = $false,
-    HelpMessage = "Get (only) Shared Mailboxes or not. Default include them"
-  )]
-  [ValidateSet("no", "only", "include")]
-  [string]$sharedMailboxes = "include",
+  [Parameter(Mandatory = $false)]
+  [switch]$Archive = $true,
 
-  [Parameter(
-    Mandatory = $false,
-    HelpMessage = "Include Archive mailboxes"
-  )]
-  [switch]$archive = $true,
-
-  [Parameter(
-    Mandatory = $false,
-    HelpMessage = "Path to CSV file with email addresses"
-  )]
-  [string]$importCSV,
-
-  [Parameter(
-    Mandatory = $false,
-    HelpMessage = "Enter path to save the CSV file"
-  )]
-  [string]$CSVpath
+  [Parameter(Mandatory = $false)]
+  [string]$ImportCSV
 )
 
-Function ConnectTo-EXO {
-  <#
-    .SYNOPSIS
-        Connects to EXO when no connection exists. Checks for EXO v2 module
-  #>
-  
-  process {
-    # Check if EXO is installed and connect if no connection exists
-    if ($null -eq (Get-Module -ListAvailable -Name ExchangeOnlineManagement))
-    {
-      Write-Host "Exchange Online PowerShell v3 module is required, do you want to install it?" -ForegroundColor Yellow
-      
-      $install = Read-Host Do you want to install module? [Y] Yes [N] No 
-      if($install -match "[yY]") 
-      { 
-        Write-Host "Installing Exchange Online PowerShell v3 module" -ForegroundColor Cyan
-        Install-Module ExchangeOnlineManagement -Repository PSGallery -AllowClobber -Force
-      } 
-      else
-      {
-	      Write-Error "Please install EXO v3 module."
-      }
-    }
+$ErrorActionPreference = 'Stop'
 
+# ============================================================
+# Exportinstellingen
+# ============================================================
 
-    if ($null -ne (Get-Module -ListAvailable -Name ExchangeOnlineManagement)) 
-    {
-	    # Check if there is a active EXO sessions
-	    $psSessions = Get-PSSession | Select-Object -Property State, Name
-	    If (((@($psSessions) -like '@{State=Opened; Name=ExchangeOnlineInternalSession*').Count -gt 0) -ne $true) {
-		    Connect-ExchangeOnline -UserPrincipalName $adminUPN -showBanner:$false
-	    }
-    }
-    else{
-      Write-Error "Please install EXO v3 module."
-    }
-  }
-}
+$ExportFolder = 'C:\Temp'
+$TimeStamp = Get-Date -Format 'yyyyMMdd_HHmmss'
+$CSVPath = Join-Path `
+  -Path $ExportFolder `
+  -ChildPath "MailboxSizeReport_$TimeStamp.csv"
 
-Function Get-Mailboxes {
-  <#
-    .SYNOPSIS
-        Get all the mailboxes for the report
-  #>
-  process {
-    if ($importCSV) {
-      write-host "Using import CSV for email address" -ForegroundColor cyan
+# ============================================================
+# Functies
+# ============================================================
 
-      $mailboxes = Import-CSV -path $importCSV -Header 'emailaddress' 
-      
-      ForEach($mailbox in $mailboxes) {
-        Get-EXOMailbox -Identity $mailbox.emailaddress -Properties IssueWarningQuota, ProhibitSendReceiveQuota, ArchiveQuota, ArchiveWarningQuota, ArchiveDatabase | 
-        Select-Object UserPrincipalName, DisplayName, PrimarySMTPAddress, RecipientType, RecipientTypeDetails, IssueWarningQuota, ProhibitSendReceiveQuota, ArchiveQuota, ArchiveWarningQuota, ArchiveDatabase
-      }
-    }else{
-      switch ($sharedMailboxes)
-      {
-        "include" {$mailboxTypes = "UserMailbox,SharedMailbox"}
-        "only" {$mailboxTypes = "SharedMailbox"}
-        "no" {$mailboxTypes = "UserMailbox"}
-      }
+function Test-IsAdministrator {
+  [CmdletBinding()]
+  param()
 
-      Get-EXOMailbox -ResultSize unlimited -RecipientTypeDetails $mailboxTypes -Properties IssueWarningQuota, ProhibitSendReceiveQuota, ArchiveQuota, ArchiveWarningQuota, ArchiveDatabase | 
-        Select-Object UserPrincipalName, DisplayName, PrimarySMTPAddress, RecipientType, RecipientTypeDetails, IssueWarningQuota, ProhibitSendReceiveQuota, ArchiveQuota, ArchiveWarningQuota, ArchiveDatabase
-    }
-  }
-}
+  $CurrentIdentity = [Security.Principal.WindowsIdentity]::GetCurrent()
 
-Function ConvertTo-Gb {
-  <#
-    .SYNOPSIS
-        Convert mailbox size to Gb for uniform reporting.
-  #>
-  param(
-    [Parameter(
-      Mandatory = $true
-    )]
-    [string]$size
+  $WindowsPrincipal = [Security.Principal.WindowsPrincipal]::new(
+    $CurrentIdentity
   )
-  process {
-    if ($size -ne $null) {
-      $value = $size.Split(" ")
 
-      switch($value[1]) {
-        "GB" {$sizeInGb = ($value[0])}
-        "MB" {$sizeInGb = ($value[0] / 1024)}
-        "KB" {$sizeInGb = ($value[0] / 1024 / 1024)}
-        "B"  {$sizeInGb = 0}
-      }
-
-      return [Math]::Round($sizeInGb,2,[MidPointRounding]::AwayFromZero)
-    }
-  }
+  return $WindowsPrincipal.IsInRole(
+    [Security.Principal.WindowsBuiltInRole]::Administrator
+  )
 }
 
-Function Get-MailboxStats {
-  <#
-    .SYNOPSIS
-        Get the mailbox size and quota
-  #>
-  process {
-    $i = 0
-    $mailboxes = Get-Mailboxes 
-    $mailboxes | ForEach-Object {
+function Connect-ToExchangeOnline {
+  [CmdletBinding()]
+  param()
 
-      # Get mailbox size     
-      $mailboxSize = Get-EXOMailboxStatistics -Identity $_.UserPrincipalName -Properties LastUserActionTime | Select-Object TotalItemSize,TotalDeletedItemSize,ItemCount,DeletedItemCount,LastUserActionTime
+  $ModuleName = 'ExchangeOnlineManagement'
 
-      if ($null -ne $mailboxSize) {
-      
-        # Get archive size if it exists and is requested
-        $archiveSize = 0
-        $archiveResult = $null
+  if (-not (Get-Module -ListAvailable -Name $ModuleName)) {
+    Write-Host ''
+    Write-Host `
+      'De Exchange Online PowerShell-module is niet geïnstalleerd.' `
+      -ForegroundColor Yellow
 
-        if ($archive.IsPresent -and ($null -ne $_.ArchiveDatabase)) {
-          $archiveResult = Get-EXOMailboxStatistics -UserPrincipalName $_.UserPrincipalName -Archive | Select-Object ItemCount,DeletedItemCount,@{Name = "TotalArchiveSize"; Expression = {$_.TotalItemSize.ToString().Split("(")[0]}}
-          if ($null -ne $archiveResult) {
-            $archiveSize = ConvertTo-Gb -size $archiveResult.TotalArchiveSize
+    if (-not (Test-IsAdministrator)) {
+      throw @'
+De module ExchangeOnlineManagement ontbreekt.
+
+Start PowerShell of PowerShell ISE als administrator.
+De module wordt uitsluitend in de computercontext geïnstalleerd
+met -Scope AllUsers.
+'@
+    }
+
+    Write-Host `
+      'ExchangeOnlineManagement wordt in de computercontext geïnstalleerd...' `
+      -ForegroundColor Cyan
+
+    [Net.ServicePointManager]::SecurityProtocol = `
+      [Net.SecurityProtocolType]::Tls12
+
+    Install-Module `
+      -Name $ModuleName `
+      -Repository PSGallery `
+      -Scope AllUsers `
+      -AllowClobber `
+      -Force `
+      -ErrorAction Stop
+  }
+
+  Import-Module `
+    -Name $ModuleName `
+    -ErrorAction Stop
+
+  Write-Host ''
+  Write-Host `
+    'Het Microsoft-aanmeldvenster wordt geopend...' `
+    -ForegroundColor Cyan
+
+  Connect-ExchangeOnline `
+    -ShowBanner:$false `
+    -ErrorAction Stop
+}
+
+function Convert-ExchangeSizeToGB {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $false)]
+    [AllowNull()]
+    $Value
+  )
+
+  if ($null -eq $Value) {
+    return $null
+  }
+
+  $Text = $Value.ToString().Trim()
+
+  if (
+    [string]::IsNullOrWhiteSpace($Text) -or
+    $Text -eq 'Unlimited'
+  ) {
+    return $null
+  }
+
+  # Exchange retourneert doorgaans bijvoorbeeld:
+  # 12.34 GB (13,250,000,000 bytes)
+  #
+  # Het aantal bytes is betrouwbaarder dan de weergegeven eenheid.
+  if ($Text -match '\((?<Bytes>[\d\s,\.]+)\sbytes\)') {
+    $ByteText = $Matches.Bytes -replace '[^\d]', ''
+
+    if (-not [string]::IsNullOrWhiteSpace($ByteText)) {
+      $Bytes = [decimal]$ByteText
+
+      return [math]::Round(
+        [double]($Bytes / 1GB),
+        2,
+        [MidpointRounding]::AwayFromZero
+      )
+    }
+  }
+
+  # Terugval wanneer het aantal bytes niet in de tekst staat.
+  $DisplayValue = ($Text -split '\(')[0].Trim()
+
+  if (
+    $DisplayValue -notmatch
+    '^(?<Number>[\d\.,]+)\s*(?<Unit>TB|GB|MB|KB|B)$'
+  ) {
+    return $null
+  }
+
+  $NumberText = $Matches.Number
+  $Unit = $Matches.Unit.ToUpperInvariant()
+
+  if (
+    $NumberText.Contains(',') -and
+    $NumberText.Contains('.')
+  ) {
+    if (
+      $NumberText.LastIndexOf(',') -gt
+      $NumberText.LastIndexOf('.')
+    ) {
+      $NumberText = $NumberText.Replace('.', '')
+      $NumberText = $NumberText.Replace(',', '.')
+    }
+    else {
+      $NumberText = $NumberText.Replace(',', '')
+    }
+  }
+  elseif ($NumberText.Contains(',')) {
+    $NumberText = $NumberText.Replace(',', '.')
+  }
+
+  $Number = 0.0
+
+  $Parsed = [double]::TryParse(
+    $NumberText,
+    [System.Globalization.NumberStyles]::Any,
+    [System.Globalization.CultureInfo]::InvariantCulture,
+    [ref]$Number
+  )
+
+  if (-not $Parsed) {
+    return $null
+  }
+
+  switch ($Unit) {
+    'TB' {
+      $SizeInGB = $Number * 1024
+    }
+
+    'GB' {
+      $SizeInGB = $Number
+    }
+
+    'MB' {
+      $SizeInGB = $Number / 1024
+    }
+
+    'KB' {
+      $SizeInGB = $Number / 1024 / 1024
+    }
+
+    'B' {
+      $SizeInGB = $Number / 1GB
+    }
+
+    default {
+      return $null
+    }
+  }
+
+  return [math]::Round(
+    $SizeInGB,
+    2,
+    [MidpointRounding]::AwayFromZero
+  )
+}
+
+function Get-MailboxesForReport {
+  [CmdletBinding()]
+  param()
+
+  $Properties = @(
+    'IssueWarningQuota'
+    'ProhibitSendReceiveQuota'
+    'ArchiveQuota'
+    'ArchiveWarningQuota'
+    'ArchiveDatabase'
+  )
+
+  if (-not [string]::IsNullOrWhiteSpace($ImportCSV)) {
+    if (-not (Test-Path -LiteralPath $ImportCSV)) {
+      throw "Het importbestand bestaat niet: $ImportCSV"
+    }
+
+    Write-Host `
+      "Mailboxen worden ingelezen uit: $ImportCSV" `
+      -ForegroundColor Cyan
+
+    $ImportedMailboxes = Import-Csv `
+      -LiteralPath $ImportCSV
+
+    foreach ($ImportedMailbox in $ImportedMailboxes) {
+      $EmailAddress = $null
+
+      foreach ($PossibleColumn in @(
+          'EmailAddress'
+          'Email Address'
+          'PrimarySmtpAddress'
+          'UserPrincipalName'
+          'UPN'
+        )) {
+        if (
+          $ImportedMailbox.PSObject.Properties.Name -contains
+          $PossibleColumn
+        ) {
+          $EmailAddress = $ImportedMailbox.$PossibleColumn
+          break
+        }
+      }
+
+      if ([string]::IsNullOrWhiteSpace($EmailAddress)) {
+        Write-Warning `
+          'Een regel in het importbestand bevat geen herkenbaar e-mailadres.'
+
+        continue
+      }
+
+      try {
+        Get-EXOMailbox `
+          -Identity $EmailAddress `
+          -Properties $Properties `
+          -ErrorAction Stop |
+        Select-Object `
+          UserPrincipalName,
+        DisplayName,
+        PrimarySmtpAddress,
+        RecipientType,
+        RecipientTypeDetails,
+        IssueWarningQuota,
+        ProhibitSendReceiveQuota,
+        ArchiveQuota,
+        ArchiveWarningQuota,
+        ArchiveDatabase
+      }
+      catch {
+        Write-Warning `
+          "Mailbox $EmailAddress kon niet worden opgehaald: $($_.Exception.Message)"
+      }
+    }
+
+    return
+  }
+
+  switch ($SharedMailboxes) {
+    'include' {
+      $MailboxTypes = @(
+        'UserMailbox'
+        'SharedMailbox'
+      )
+    }
+
+    'only' {
+      $MailboxTypes = @(
+        'SharedMailbox'
+      )
+    }
+
+    'no' {
+      $MailboxTypes = @(
+        'UserMailbox'
+      )
+    }
+  }
+
+  Get-EXOMailbox `
+    -ResultSize Unlimited `
+    -RecipientTypeDetails $MailboxTypes `
+    -Properties $Properties `
+    -ErrorAction Stop |
+  Select-Object `
+    UserPrincipalName,
+  DisplayName,
+  PrimarySmtpAddress,
+  RecipientType,
+  RecipientTypeDetails,
+  IssueWarningQuota,
+  ProhibitSendReceiveQuota,
+  ArchiveQuota,
+  ArchiveWarningQuota,
+  ArchiveDatabase
+}
+
+function Get-MailboxSizeReport {
+  [CmdletBinding()]
+  param()
+
+  $Mailboxes = @(
+    Get-MailboxesForReport
+  )
+
+  if ($Mailboxes.Count -eq 0) {
+    Write-Warning 'Er zijn geen mailboxen gevonden.'
+    return
+  }
+
+  $CurrentNumber = 0
+
+  foreach ($Mailbox in $Mailboxes) {
+    $CurrentNumber++
+
+    $PercentComplete = [math]::Round(
+      ($CurrentNumber / $Mailboxes.Count) * 100,
+      0
+    )
+
+    Write-Progress `
+      -Activity 'Mailboxgegevens verzamelen' `
+      -Status "$CurrentNumber van $($Mailboxes.Count)" `
+      -PercentComplete $PercentComplete `
+      -CurrentOperation $Mailbox.DisplayName
+
+    try {
+      # ========================================================
+      # Primaire mailbox
+      # ========================================================
+
+      $MailboxStatistics = Get-EXOMailboxStatistics `
+        -Identity $Mailbox.UserPrincipalName `
+        -Properties LastUserActionTime `
+        -ErrorAction Stop |
+      Select-Object `
+        TotalItemSize,
+      TotalDeletedItemSize,
+      ItemCount,
+      DeletedItemCount,
+      LastUserActionTime
+
+      $TotalSizeGB = Convert-ExchangeSizeToGB `
+        -Value $MailboxStatistics.TotalItemSize
+
+      $DeletedItemsSizeGB = Convert-ExchangeSizeToGB `
+        -Value $MailboxStatistics.TotalDeletedItemSize
+
+      $WarningQuotaGB = Convert-ExchangeSizeToGB `
+        -Value $Mailbox.IssueWarningQuota
+
+      $MaximumMailboxSizeGB = Convert-ExchangeSizeToGB `
+        -Value $Mailbox.ProhibitSendReceiveQuota
+
+      if (
+        $null -ne $MaximumMailboxSizeGB -and
+        $null -ne $TotalSizeGB
+      ) {
+        $MailboxFreeSpaceGB = [math]::Round(
+          $MaximumMailboxSizeGB - $TotalSizeGB,
+          2,
+          [MidpointRounding]::AwayFromZero
+        )
+      }
+      else {
+        $MailboxFreeSpaceGB = '-'
+      }
+
+      # ========================================================
+      # Archiefmailbox
+      # ========================================================
+
+      $ArchiveStatistics = $null
+      $ArchiveSizeGB = $null
+      $ArchiveQuotaGB = $null
+      $ArchiveWarningGB = $null
+      $ArchiveFreeGB = '-'
+
+      if (
+        $Archive.IsPresent -and
+        $null -ne $Mailbox.ArchiveDatabase
+      ) {
+        try {
+          $ArchiveStatistics = Get-EXOMailboxStatistics `
+            -Identity $Mailbox.UserPrincipalName `
+            -Archive `
+            -ErrorAction Stop |
+          Select-Object `
+            TotalItemSize,
+          ItemCount,
+          DeletedItemCount
+
+          $ArchiveSizeGB = Convert-ExchangeSizeToGB `
+            -Value $ArchiveStatistics.TotalItemSize
+
+          $ArchiveQuotaGB = Convert-ExchangeSizeToGB `
+            -Value $Mailbox.ArchiveQuota
+
+          $ArchiveWarningGB = Convert-ExchangeSizeToGB `
+            -Value $Mailbox.ArchiveWarningQuota
+
+          if (
+            $null -ne $ArchiveQuotaGB -and
+            $null -ne $ArchiveSizeGB
+          ) {
+            $ArchiveFreeGB = [math]::Round(
+              $ArchiveQuotaGB - $ArchiveSizeGB,
+              2,
+              [MidpointRounding]::AwayFromZero
+            )
           }
         }
-
-        # Get Sent Items 
-        $sentItems = Get-EXOMailboxFolderStatistics -Identity $_.UserPrincipalName -Folderscope sentitems | Where-Object {
-          $_.FolderPath -eq "/Sent Items"
-        } | Select-Object ItemsInFolderAndSubfolders,@{
-          Name = "sentItemSize"; 
-          Expression = {$_.FolderAndSubfolderSize.ToString().Split("(")[0]}
+        catch {
+          Write-Warning (
+            "Archiefstatistieken konden niet worden opgehaald " +
+            "voor $($Mailbox.UserPrincipalName): " +
+            $_.Exception.Message
+          )
         }
-    
-        [pscustomobject]@{
-          "Display Name" = $_.DisplayName
-          "Email Address" = $_.PrimarySMTPAddress
-          "Mailbox Type" = $_.RecipientTypeDetails
-          "Last User Action Time" = $mailboxSize.LastUserActionTime
-          "Total Size (GB)" = ConvertTo-Gb -size $mailboxSize.TotalItemSize.ToString().Split("(")[0]
-          "Deleted Items Size (GB)" = ConvertTo-Gb -size $mailboxSize.TotalDeletedItemSize.ToString().Split("(")[0]
-          "Item Count" = $mailboxSize.ItemCount
-          "Deleted Items Count" = $mailboxSize.DeletedItemCount
-          "Mailbox Warning Quota (GB)" = ($_.IssueWarningQuota.ToString().Split("(")[0]).Split(" GB") | Select-Object -First 1
-          "Max Mailbox Size (GB)" = ($_.ProhibitSendReceiveQuota.ToString().Split("(")[0]).Split(" GB") | Select-Object -First 1
-          "Mailbox Free Space (GB)" = (($_.ProhibitSendReceiveQuota.ToString().Split("(")[0]).Split(" GB") | Select-Object -First 1) - (ConvertTo-Gb -size $mailboxSize.TotalItemSize.ToString().Split("(")[0])
-          "Sent Items Size (GB)" = $(if($null -ne $sentItems) {ConvertTo-Gb -size $sentItems.sentItemSize} else {'-'})
-          "Sent Items Count" = $(if($null -ne $sentItems) {$sentItems.ItemsInFolderAndSubfolders} else {'-'}) 
-          "Archive Size (GB)" = $(if($null -ne $archiveResult) {ConvertTo-Gb -size $archiveResult.TotalArchiveSize} else {'-'})
-          "Archive Items Count" = $(if($null -ne $archiveResult) {$archiveResult.ItemCount} else {'-'}) 
-          "Archive Mailbox Free Space (GB)*" = $(if($null -ne $archiveResult) {(ConvertTo-Gb -size $_.ArchiveQuota.ToString().Split("(")[0]) - $archiveSize} else {'-'})
-          "Archive Deleted Items Count" = $(if($null -ne $archiveResult) {$archiveResult.DeletedItemCount} else {'-'})
-          "Archive Warning Quota (GB)" = $(if($null -ne $archiveResult) {($_.ArchiveWarningQuota.ToString().Split("(")[0]).Split(" GB") | Select-Object -First 1} else {'-'})
-          "Archive Quota (GB)" = $(if($null -ne $archiveResult) {(ConvertTo-Gb -size $_.ArchiveQuota.ToString().Split("(")[0])} else {'-'})
-        }
+      }
 
-        $currentUser = $_.DisplayName
-        Write-Progress -Activity "Collecting mailbox status" -Status "Current Count: $i" -PercentComplete (($i / $mailboxes.Count) * 100) -CurrentOperation "Processing mailbox: $currentUser"
-        $i++;
+      # ========================================================
+      # Verzonden items
+      # ========================================================
+
+      $SentItemsStatistics = $null
+
+      try {
+        $SentItemsStatistics = Get-EXOMailboxFolderStatistics `
+          -Identity $Mailbox.UserPrincipalName `
+          -FolderScope SentItems `
+          -ErrorAction Stop |
+        Where-Object {
+          $_.FolderType -eq 'SentItems' -or
+          $_.FolderPath -in @(
+            '/Sent Items'
+            '/Verzonden items'
+          )
+        } |
+        Select-Object `
+          -First 1 `
+          ItemsInFolderAndSubfolders,
+        FolderAndSubfolderSize
+      }
+      catch {
+        Write-Warning (
+          "De map Verzonden items kon niet worden uitgelezen " +
+          "voor $($Mailbox.UserPrincipalName)."
+        )
+      }
+
+      if ($null -ne $SentItemsStatistics) {
+        $SentItemsSizeGB = Convert-ExchangeSizeToGB `
+          -Value $SentItemsStatistics.FolderAndSubfolderSize
+
+        $SentItemsCount = `
+          $SentItemsStatistics.ItemsInFolderAndSubfolders
+      }
+      else {
+        $SentItemsSizeGB = '-'
+        $SentItemsCount = '-'
+      }
+
+      # ========================================================
+      # Rapportregel
+      # ========================================================
+
+      [PSCustomObject][ordered]@{
+        'Display Name'                    = $Mailbox.DisplayName
+        'Email Address'                   = $Mailbox.PrimarySmtpAddress.ToString()
+        'Mailbox Type'                    = $Mailbox.RecipientTypeDetails
+        'Last User Action Time'           = $MailboxStatistics.LastUserActionTime
+        'Total Size (GB)'                 = $TotalSizeGB
+        'Deleted Items Size (GB)'         = $DeletedItemsSizeGB
+        'Item Count'                      = $MailboxStatistics.ItemCount
+        'Deleted Items Count'             = $MailboxStatistics.DeletedItemCount
+        'Mailbox Warning Quota (GB)'      = if ($null -ne $WarningQuotaGB) {
+          $WarningQuotaGB
+        }
+        else {
+          '-'
+        }
+        'Max Mailbox Size (GB)'           = if ($null -ne $MaximumMailboxSizeGB) {
+          $MaximumMailboxSizeGB
+        }
+        else {
+          '-'
+        }
+        'Mailbox Free Space (GB)'         = $MailboxFreeSpaceGB
+        'Sent Items Size (GB)'            = $SentItemsSizeGB
+        'Sent Items Count'                = $SentItemsCount
+        'Archive Size (GB)'               = if ($null -ne $ArchiveSizeGB) {
+          $ArchiveSizeGB
+        }
+        else {
+          '-'
+        }
+        'Archive Items Count'             = if ($null -ne $ArchiveStatistics) {
+          $ArchiveStatistics.ItemCount
+        }
+        else {
+          '-'
+        }
+        'Archive Mailbox Free Space (GB)' = $ArchiveFreeGB
+        'Archive Deleted Items Count'     = if ($null -ne $ArchiveStatistics) {
+          $ArchiveStatistics.DeletedItemCount
+        }
+        else {
+          '-'
+        }
+        'Archive Warning Quota (GB)'      = if ($null -ne $ArchiveWarningGB) {
+          $ArchiveWarningGB
+        }
+        else {
+          '-'
+        }
+        'Archive Quota (GB)'              = if ($null -ne $ArchiveQuotaGB) {
+          $ArchiveQuotaGB
+        }
+        else {
+          '-'
+        }
       }
     }
-  }
-}
-
-# Connect to Exchange Online
-ConnectTo-EXO
-
-If ($CSVpath) {
-    # Get mailbox status
-    Get-MailboxStats | Export-CSV -Path $CSVpath -NoTypeInformation -Encoding UTF8
-    if ((Get-Item $CSVpath).Length -gt 0) {
-        Write-Host "Report finished and saved in $CSVpath" -ForegroundColor Green
-    } 
-    else {
-        Write-Host "Failed to create report" -ForegroundColor Red
+    catch {
+      Write-Warning (
+        "Mailbox $($Mailbox.UserPrincipalName) kon niet worden " +
+        "verwerkt: $($_.Exception.Message)"
+      )
     }
+  }
+
+  Write-Progress `
+    -Activity 'Mailboxgegevens verzamelen' `
+    -Completed
 }
-Else {
-    Get-MailboxStats
+
+# ============================================================
+# Script uitvoeren
+# ============================================================
+
+$ConnectedToExchangeOnline = $false
+
+try {
+  if (-not (Test-Path -LiteralPath $ExportFolder)) {
+    New-Item `
+      -Path $ExportFolder `
+      -ItemType Directory `
+      -Force `
+      -ErrorAction Stop |
+    Out-Null
+  }
+
+  Connect-ToExchangeOnline
+  $ConnectedToExchangeOnline = $true
+
+  Write-Host ''
+  Write-Host `
+    'Het mailboxrapport wordt samengesteld...' `
+    -ForegroundColor Cyan
+  Write-Host ''
+
+  $Report = @(
+    Get-MailboxSizeReport
+  )
+
+  if ($Report.Count -eq 0) {
+    throw 'Er zijn geen mailboxgegevens gevonden. Er is geen CSV aangemaakt.'
+  }
+
+  $Report |
+  Sort-Object `
+    'Mailbox Type',
+  'Display Name' |
+  Export-Csv `
+    -LiteralPath $CSVPath `
+    -Delimiter ';' `
+    -NoTypeInformation `
+    -Encoding UTF8 `
+    -Force
+
+  if (-not (Test-Path -LiteralPath $CSVPath)) {
+    throw 'Het CSV-bestand is niet aangemaakt.'
+  }
+
+  $CSVFile = Get-Item `
+    -LiteralPath $CSVPath `
+    -ErrorAction Stop
+
+  if ($CSVFile.Length -eq 0) {
+    throw 'Het CSV-bestand is leeg aangemaakt.'
+  }
+
+  Write-Host ''
+  Write-Host '============================================' -ForegroundColor Green
+  Write-Host 'Mailboxrapport succesvol aangemaakt' -ForegroundColor Green
+  Write-Host '============================================' -ForegroundColor Green
+  Write-Host "Aantal mailboxen : $($Report.Count)"
+  Write-Host "Exportbestand    : $CSVPath" -ForegroundColor Cyan
+  Write-Host ''
+}
+catch {
+  Write-Host ''
+  Write-Host `
+    'Het mailboxrapport kon niet worden aangemaakt.' `
+    -ForegroundColor Red
+
+  Write-Host `
+    $_.Exception.Message `
+    -ForegroundColor Red
+
+  throw
+}
+finally {
+  if ($ConnectedToExchangeOnline) {
+    Disconnect-ExchangeOnline `
+      -Confirm:$false `
+      -ErrorAction SilentlyContinue
+  }
 }
