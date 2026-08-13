@@ -1,3 +1,11 @@
+[CmdletBinding()]
+param (
+    [string]$ExportDirectory
+)
+
+. (Join-Path $PSScriptRoot '..\..\Common\ExportPath.ps1')
+$ExportDirectory = Resolve-ExportDirectory -Path $ExportDirectory -DefaultPath 'C:\temp' -Prompt 'Exportmap voor het mailboxrechtenrapport'
+
 # Controleer en installeer vereiste modules
 foreach ($module in @('ExchangeOnlineManagement')) {
     if (-not (Get-Module -ListAvailable -Name $module)) {
@@ -94,11 +102,7 @@ ForEach ($M in $Mbx) {
     }
 }
 
-$OutputPath = 'C:\temp\MailboxPermissions.csv'
-$OutputDirectory = Split-Path -Parent $OutputPath
-if (-not (Test-Path -LiteralPath $OutputDirectory)) {
-    New-Item -ItemType Directory -Path $OutputDirectory -Force -ErrorAction Stop | Out-Null
-}
+$OutputPath = Join-Path -Path $ExportDirectory -ChildPath 'MailboxPermissions.csv'
 
 $Report |
     Sort-Object -Property @{Expression = { $_.MailboxType }; Ascending = $false }, Mailbox |

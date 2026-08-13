@@ -21,6 +21,13 @@
   https://lazyadmin.nl
 #>
 
+[CmdletBinding()]
+param (
+    [string]$ExportDirectory
+)
+
+. (Join-Path $PSScriptRoot '..\Common\ExportPath.ps1')
+
 # Controleer of de ActiveDirectory module beschikbaar is (onderdeel van RSAT)
 if (-not (Get-Module -ListAvailable -Name ActiveDirectory)) {
     Write-Warning "De ActiveDirectory module is niet gevonden. Installeer RSAT via: Add-WindowsCapability -Online -Name Rsat.ActiveDirectory.DS-LDS.Tools~~~~0.0.1.0"
@@ -31,7 +38,7 @@ Import-Module -Name ActiveDirectory -ErrorAction Stop
 # Set variables
 $reportDate = Get-Date -Format "dd-MM-yyyy"
 $reportFileName = "LazyDCHealthCheck-$reportDate.html"
-$reportPath = "c:\"
+$reportPath = Resolve-ExportDirectory -Path $ExportDirectory -DefaultPath 'C:\temp' -Prompt 'Exportmap voor het HTML-rapport'
 $outputToConsole = $true
 $outputToHtml = $false
 
@@ -694,7 +701,7 @@ if ($outputToHtml) {
     }
 
     # Save the HTML to a file or display it
-    $path = $reportPath + $reportFileName
+    $path = Join-Path -Path $reportPath -ChildPath $reportFileName
     
     $htmlTable | Out-File -FilePath $path -Encoding UTF8
 }

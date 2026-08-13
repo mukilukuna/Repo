@@ -46,16 +46,21 @@ param(
   [switch]$Archive = $true,
 
   [Parameter(Mandatory = $false)]
-  [string]$ImportCSV
+  [string]$ImportCSV,
+
+  [Parameter(Mandatory = $false)]
+  [string]$ExportDirectory
 )
 
 $ErrorActionPreference = 'Stop'
+
+. (Join-Path $PSScriptRoot '..\..\Common\ExportPath.ps1')
 
 # ============================================================
 # Exportinstellingen
 # ============================================================
 
-$ExportFolder = 'C:\Temp'
+$ExportFolder = Resolve-ExportDirectory -Path $ExportDirectory -DefaultPath 'C:\Temp' -Prompt 'Exportmap voor het mailboxgrootterapport'
 $TimeStamp = Get-Date -Format 'yyyyMMdd_HHmmss'
 $CSVPath = Join-Path `
   -Path $ExportFolder `

@@ -5,12 +5,19 @@ Read-only: leest alleen logs uit en maakt een zipbestand.
 =====================================================================
 #>
 
+[CmdletBinding()]
+param (
+    [string]$ExportDirectory
+)
+
+. (Join-Path $PSScriptRoot '..\..\Common\ExportPath.ps1')
+
 # Periode aanpassen
 $StartTimeLocal = (Get-Date).AddDays(-7)
 $EndTimeLocal   = Get-Date
 
 # Outputlocatie
-$OutputBase = "C:\Temp\RDWeb-Bruteforce-Collect"
+$OutputBase = Resolve-ExportDirectory -Path $ExportDirectory -DefaultPath 'C:\Temp\RDWeb-Bruteforce-Collect' -Prompt 'Exportmap voor de RDWeb-collector'
 
 # URI-filters voor RDWeb/RD Gateway/IIS
 $UriPatterns = @(

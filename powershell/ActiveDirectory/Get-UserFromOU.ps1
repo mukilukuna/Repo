@@ -36,8 +36,10 @@ param(
         Mandatory = $false,
         HelpMessage = "Enter path to save the CSV file"
     )]
-    [string]$path = ".\ADUsers-$((Get-Date -format "MMM-dd-yyyy").ToString()).csv"
+    [string]$path
 )
+
+. (Join-Path $PSScriptRoot '..\Common\ExportPath.ps1')
 
 # Controleer of de ActiveDirectory module beschikbaar is (onderdeel van RSAT)
 if (-not (Get-Module -ListAvailable -Name ActiveDirectory)) {
@@ -45,6 +47,9 @@ if (-not (Get-Module -ListAvailable -Name ActiveDirectory)) {
     throw "ActiveDirectory module is vereist om dit script uit te voeren."
 }
 Import-Module -Name ActiveDirectory -ErrorAction Stop
+
+$DefaultCSVPath = Join-Path 'C:\temp' "ADUsers_$(Get-Date -Format 'yyyyMMdd_HHmmss').csv"
+$path = Resolve-ExportFilePath -Path $path -DefaultPath $DefaultCSVPath -Prompt 'CSV-exportbestand'
 
 Function Get-Users {
     <#

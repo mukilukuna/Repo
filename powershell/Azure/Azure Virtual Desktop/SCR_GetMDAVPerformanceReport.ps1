@@ -10,8 +10,15 @@ Zorg ervoor dat het volgende is ingesteld:
 Gemaakt door: ChatGPT
 #>
 
+[CmdletBinding()]
+param (
+    [string]$ExportDirectory
+)
+
+. (Join-Path $PSScriptRoot '..\..\Common\ExportPath.ps1')
+
 # Variabelen
-$WorkingFolder = 'C:\temp'
+$WorkingFolder = Resolve-ExportDirectory -Path $ExportDirectory -DefaultPath 'C:\temp' -Prompt 'Exportmap voor de Defender-opname en het rapport'
 $RecordingPath = Join-Path -Path $WorkingFolder -ChildPath 'MDAV_Recording.etl'
 $ReportPath = Join-Path -Path $WorkingFolder -ChildPath 'MDAV_Performance_Report.txt'
 $TopCount = 100

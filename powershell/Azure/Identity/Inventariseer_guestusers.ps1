@@ -3,35 +3,7 @@ param (
     [string]$ExportDirectory
 )
 
-function Resolve-ExportDirectory {
-    param (
-        [string]$Path,
-        [string]$DefaultPath = 'C:\temp'
-    )
-
-    if ([string]::IsNullOrWhiteSpace($Path)) {
-        $Path = Read-Host "Exportmap (druk op Enter voor '$DefaultPath')"
-    }
-    if ([string]::IsNullOrWhiteSpace($Path)) {
-        $Path = $DefaultPath
-    }
-
-    $Path = [Environment]::ExpandEnvironmentVariables($Path.Trim().Trim('"'))
-    if (-not [System.IO.Path]::IsPathRooted($Path)) {
-        $Path = Join-Path -Path (Get-Location).ProviderPath -ChildPath $Path
-    }
-
-    $Path = [System.IO.Path]::GetFullPath($Path)
-    if (-not (Test-Path -LiteralPath $Path)) {
-        New-Item -ItemType Directory -Path $Path -Force -ErrorAction Stop | Out-Null
-    }
-    elseif (-not (Test-Path -LiteralPath $Path -PathType Container)) {
-        throw "Het exportpad is geen map: $Path"
-    }
-
-    return $Path
-}
-
+. (Join-Path $PSScriptRoot '..\..\Common\ExportPath.ps1')
 $ExportDirectory = Resolve-ExportDirectory -Path $ExportDirectory
 
 # Controleer en installeer vereiste modules
