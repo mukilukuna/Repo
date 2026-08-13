@@ -1,3 +1,39 @@
+[CmdletBinding()]
+param (
+    [string]$ExportDirectory
+)
+
+function Resolve-ExportDirectory {
+    param (
+        [string]$Path,
+        [string]$DefaultPath = 'C:\temp'
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        $Path = Read-Host "Exportmap (druk op Enter voor '$DefaultPath')"
+    }
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        $Path = $DefaultPath
+    }
+
+    $Path = [Environment]::ExpandEnvironmentVariables($Path.Trim().Trim('"'))
+    if (-not [System.IO.Path]::IsPathRooted($Path)) {
+        $Path = Join-Path -Path (Get-Location).ProviderPath -ChildPath $Path
+    }
+
+    $Path = [System.IO.Path]::GetFullPath($Path)
+    if (-not (Test-Path -LiteralPath $Path)) {
+        New-Item -ItemType Directory -Path $Path -Force -ErrorAction Stop | Out-Null
+    }
+    elseif (-not (Test-Path -LiteralPath $Path -PathType Container)) {
+        throw "Het exportpad is geen map: $Path"
+    }
+
+    return $Path
+}
+
+$ExportDirectory = Resolve-ExportDirectory -Path $ExportDirectory
+
 # Controleer en installeer vereiste modules
 foreach ($module in @('Microsoft.Graph')) {
     if (-not (Get-Module -ListAvailable -Name $module)) {
@@ -30,5 +66,9 @@ $inactiveGuestUsers = $guestUsers | Where-Object {
 # Stap 6: Selecteer de gewenste eigenschappen
 $inactiveGuestUsers | Select-Object DisplayName, UserPrincipalName, @{Name = "LastSignInDateTime"; Expression = { $_.SignInActivity.LastSignInDateTime } }
 
-# Stap 7: Exporteer de lijst naar een CSV-bestand (optioneel)
-$inactiveGuestUsers | Select-Object DisplayName, UserPrincipalName, @{Name = "LastSignInDateTime"; Expression = { $_.SignInActivity.LastSignInDateTime } } | Export-Csv -Path "C:\temp\InactieveGastGebruikers.csv" -NoTypeInformation -Encoding UTF8
+# Stap 7: Exporteer de lijst naar een CSV-bestand
+$OutputPath = Join-Path -Path $ExportDirectory -ChildPath 'InactieveGastGebruikers.csv'
+$inactiveGuestUsers |
+    Select-Object DisplayName, UserPrincipalName, @{Name = "LastSignInDateTime"; Expression = { $_.SignInActivity.LastSignInDateTime } } |
+    Export-Csv -LiteralPath $OutputPath -NoTypeInformation -Encoding UTF8
+Write-Host "Resultaten geëxporteerd naar: $OutputPath" -ForegroundColor Green
