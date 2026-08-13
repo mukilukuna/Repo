@@ -166,8 +166,8 @@ param(
     [Parameter(Mandatory = $false, HelpMessage = "Save report to disk. Default is false")]
     [bool]$ReportToDisk = $false,    
 
-    [Parameter(Mandatory = $false, HelpMessage = "Path where to save the report. Default is TEMP directory for Azure Automation compatibility")]
-    [string]$ReportToDiskPath = "$env:TEMP",
+    [Parameter(Mandatory = $false, HelpMessage = "Path where to save the report. When omitted, the script asks for it in the terminal.")]
+    [string]$ReportToDiskPath,
     # ==========> Throttling and Retry (Invoke-MgGraphRequestSingle and Invoke-MgGraphRequestBatch) <======================
     [Parameter(Mandatory = $false, HelpMessage = "Wait time in milliseconds between throttled requests. Default is 1000")]
     [ValidateRange(100, 5000)]
@@ -178,6 +178,12 @@ param(
     [int]$GraphMaxRetry = 3
 )
 #endregion
+
+if ($ReportToDisk) {
+    . (Join-Path $PSScriptRoot '..\Common\ExportPath.ps1')
+    $DefaultReportPath = Join-Path $env:TEMP 'Reports'
+    $ReportToDiskPath = Resolve-ExportDirectory -Path $ReportToDiskPath -DefaultPath $DefaultReportPath -Prompt 'Exportmap voor het Intune Primary User-rapport'
+}
 
 #region ---------------------------------------------------[Modifiable Variables and defaults]------------------------------------
 # Application IDs for the search of sign-in logs on different OS
