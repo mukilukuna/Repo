@@ -1,84 +1,91 @@
-# Dit script installeert een app via een stille installatie en logt de voortgang.
-# Zet foutafhandeling zodat niet-terminerende fouten ook worden opgevangen in try/catch
+<#
+.SYNOPSIS
+    Installeert een of meerdere applicaties stil en schrijft een Intune-logbestand.
+
+.EXAMPLE
+    .\SCR_APP_Install.ps1
+
+.EXAMPLE
+    .\SCR_APP_Install.ps1 -ApplicationPath '.\app1.exe', '.\app2.exe' -LogFileName 'MultiInstallApps.log'
+#>
+
+[CmdletBinding()]
+param (
+    [string[]]$ApplicationPath,
+
+    [ValidateNotNullOrEmpty()]
+    [string]$LogFileName = 'InstallApps.log'
+)
+
 $ErrorActionPreference = 'Stop'
 
-# Pad naar logbestand (wordt aangemaakt als het niet bestaat)
-$logPath = Join-Path -Path $env:ProgramData -ChildPath "Microsoft\IntuneManagementExtension\Logs\InstallApps.log"
-
-# Zorg dat de logdirectory bestaat
-if (-not (Test-Path -Path (Split-Path $logPath))) {
-    New-Item -Path (Split-Path $logPath) -ItemType Directory -Force | Out-Null
+if (-not $ApplicationPath) {
+    $ApplicationPath = @(Join-Path $PSScriptRoot 'setup.exe')
 }
 
-# Logging-functie voor het toevoegen van tijdgestempelde berichten aan het logbestand
-function Write-Log {
+$LogDirectory = Join-Path $env:ProgramData 'Microsoft\IntuneManagementExtension\Logs'
+$LogPath = Join-Path $LogDirectory $LogFileName
+if (-not (Test-Path -LiteralPath $LogDirectory -PathType Container)) {
+    New-Item -Path $LogDirectory -ItemType Directory -Force -ErrorAction Stop | Out-Null
+}
+
+function Write-InstallLog {
     param (
-        [string]$Message,
-        [string]$Level = "INFO"
+        [Parameter(Mandatory)][string]$Message,
+        [ValidateSet('INFO', 'ERROR')][string]$Level = 'INFO'
     )
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $entry = "$timestamp [$Level] $Message"
-    # Schrijf naar logbestand (UTF8 encoding)
-    $entry | Out-File -FilePath $logPath -Append -Encoding utf8
-    # Schrijf ook naar standaardoutput (voor directe feedback bij interactief draaien)
-    Write-Output $entry
+
+    $Timestamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+    $Entry = "$Timestamp [$Level] $Message"
+    $Entry | Out-File -LiteralPath $LogPath -Append -Encoding utf8
+    Write-Output $Entry
 }
 
-Write-Log "Starting Intune multi-install script..."
-
-# Functie om een applicatie stil te installeren
 function Install-Application {
-    param (
-        [string]$filePath
-    )
+    param ([Parameter(Mandatory)][string]$FilePath)
 
-    if (Test-Path -Path $filePath) {
-        Write-Log "Bezig met installeren: $filePath"
-        try {
-            $process = Start-Process -FilePath $filePath -ArgumentList "/s", "/v`"REBOOT=ReallySuppress /qn /l*v `"$logPath`"`"" -Wait -PassThru -ErrorAction Stop
-            if ($process.ExitCode -ne 0) {
-                throw "Installer exited with code $($process.ExitCode)"
-            }
-            Write-Log "Installatie voltooid: $filePath"
-            return $true
-        }
-        catch {
-            Write-Log "FOUT bij installatie van $filePath - $($_.Exception.Message)"
-            return $false
-        }
+    if (-not (Test-Path -LiteralPath $FilePath -PathType Leaf)) {
+        Write-InstallLog -Message "Bestand niet gevonden: $FilePath" -Level ERROR
+        return $false
     }
-    else {
-        Write-Log "Bestand niet gevonden: $filePath"
+
+    Write-InstallLog -Message "Bezig met installeren: $FilePath"
+    try {
+        $ArgumentList = @('/s', "/v`"REBOOT=ReallySuppress /qn /l*v `"$LogPath`"`"")
+        $Process = Start-Process -FilePath $FilePath -ArgumentList $ArgumentList -Wait -PassThru -ErrorAction Stop
+        if ($Process.ExitCode -ne 0) {
+            throw "Installer eindigde met afsluitcode $($Process.ExitCode)."
+        }
+
+        Write-InstallLog -Message "Installatie voltooid: $FilePath"
+        return $true
+    }
+    catch {
+        Write-InstallLog -Message "Installatie mislukt voor $FilePath - $($_.Exception.Message)" -Level ERROR
         return $false
     }
 }
 
+Write-InstallLog -Message "Installatiescript gestart voor $($ApplicationPath.Count) applicatie(s)."
+$AnyError = $false
 
-# Lijst van applicaties
-$applications = @(
-    @{ Path = "$PSScriptRoot\setup.exe" }
-)
-
-$anyError = $false
-
-# Installeer applicaties indien de voorwaarden correct zijn
-foreach ($app in $applications) {
-    if (-not ($app.ContainsKey('InstallCondition') -and !$(& $app.InstallCondition))) {
-        Write-Log "Installatie wordt gestart voor: $($app.Path)"
-        if (-not (Install-Application -filePath $app.Path)) {
-            $anyError = $true
-        }
+foreach ($Path in $ApplicationPath) {
+    $ResolvedPath = if ([System.IO.Path]::IsPathRooted($Path)) {
+        $Path
     }
     else {
-        Write-Log "Applicatie wordt overgeslagen: $($app.Path) omdat de installatievoorwaarde niet is voldaan."
+        Join-Path $PSScriptRoot $Path
+    }
+
+    if (-not (Install-Application -FilePath $ResolvedPath)) {
+        $AnyError = $true
     }
 }
 
-if ($anyError) {
-    Write-Log "Een of meer installaties zijn mislukt. Script eindigt met exitcode 1."
+if ($AnyError) {
+    Write-InstallLog -Message 'Een of meer installaties zijn mislukt. Script eindigt met afsluitcode 1.' -Level ERROR
     exit 1
 }
-else {
-    Write-Log "Alle installaties succesvol afgerond. Script eindigt met exitcode 0."
-    exit 0
-}
+
+Write-InstallLog -Message 'Alle installaties zijn succesvol afgerond. Script eindigt met afsluitcode 0.'
+exit 0

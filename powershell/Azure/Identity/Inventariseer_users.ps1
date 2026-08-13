@@ -2,6 +2,12 @@
 param (
     [string]$ExportDirectory,
 
+    [ValidateSet('AllUsers', 'InactiveGuests', 'Both')]
+    [string]$ReportType = 'Both',
+
+    [ValidateRange(1, 120)]
+    [int]$InactiveMonths = 3,
+
     [Parameter(DontShow = $true)]
     [switch]$IsolatedGraphProcess
 )
@@ -24,6 +30,10 @@ if (-not $IsolatedGraphProcess) {
         '-File'
         $PSCommandPath
         '-IsolatedGraphProcess'
+        '-ReportType'
+        $ReportType
+        '-InactiveMonths'
+        $InactiveMonths.ToString()
     )
 
     if (-not [string]::IsNullOrWhiteSpace($ExportDirectory)) {
@@ -93,47 +103,58 @@ if ($users.Count -eq 0) {
     throw 'Er zijn geen gebruikers gevonden. Er wordt geen CSV-bestand aangemaakt.'
 }
 
-# Maak een array om de resultaten op te slaan
-$result = @()
-
-foreach ($user in $users) {
-    # Bepaal het type gebruiker
-    switch ($user.UserType) {
-        "Member" {
-            if ($user.MailNickname -like "*shared*") {
-                $userType = "Shared"
-            }
-            else {
-                $userType = "User"
-            }
+if ($ReportType -in @('AllUsers', 'Both')) {
+    $result = foreach ($user in $users) {
+        # Graph bevat geen betrouwbaar mailboxtype. Deze classificatie beschrijft het accounttype.
+        $userType = switch ($user.UserType) {
+            'Member' { 'User' }
+            'Guest' { 'Guest' }
+            default { 'External' }
         }
-        "Guest" { $userType = "Guest" }
-        default { $userType = "External" }
+
+        $hasLicense = if ($user.AssignedLicenses.Count -gt 0) { 'Ja' } else { 'Nee' }
+        $adSynced = if ($user.OnPremisesSyncEnabled -eq $true) { 'Ja' } else { 'Nee' }
+        $lastSignIn = if ($user.SignInActivity.LastSignInDateTime) {
+            $user.SignInActivity.LastSignInDateTime
+        }
+        else {
+            'Nooit aangemeld'
+        }
+
+        [PSCustomObject]@{
+            Naam                  = $user.DisplayName
+            Email                 = $user.UserPrincipalName
+            Type                  = $userType
+            Functie               = $user.JobTitle
+            Licentie              = $hasLicense
+            ActiveDirectorySynced = $adSynced
+            LaatsteAanmelding     = $lastSignIn
+            GastExternGebruiker   = $user.UserType
+        }
     }
 
-    # Controleer of de gebruiker een licentie heeft
-    $hasLicense = if ($user.AssignedLicenses.Count -gt 0) { "Ja" } else { "Nee" }
-
-    # Controleer of de gebruiker gesynchroniseerd is met Active Directory
-    $adSynced = if ($user.OnPremisesSyncEnabled -eq $true) { "Ja" } else { "Nee" }
-
-    # Haal de laatste aanmeldingsdatum op
-    $lastSignIn = if ($user.SignInActivity.LastSignInDateTime) { $user.SignInActivity.LastSignInDateTime } else { "Nooit aangemeld" }
-
-    # Voeg de gegevens toe aan de resultaten
-    $result += [PSCustomObject]@{
-        Naam                  = $user.DisplayName
-        Email                 = $user.UserPrincipalName
-        Type                  = $userType
-        Functie               = $user.JobTitle
-        Licentie              = $hasLicense
-        ActiveDirectorySynced = $adSynced
-        LaatsteAanmelding     = $lastSignIn
-        GastExternGebruiker   = $user.UserType
-    }
+    $OutputPath = Join-Path -Path $ExportDirectory -ChildPath "AzureAD_Gebruikers_$datum.csv"
+    $result | Export-Csv -LiteralPath $OutputPath -NoTypeInformation -Encoding UTF8 -ErrorAction Stop
+    Write-Host "Alle gebruikers geëxporteerd naar: $OutputPath" -ForegroundColor Green
 }
 
-# Exporteer de resultaten naar een CSV-bestand
-$OutputPath = Join-Path -Path $ExportDirectory -ChildPath "AzureAD_Gebruikers_$datum.csv"
-$result | Export-Csv -LiteralPath $OutputPath -NoTypeInformation -Encoding UTF8 -ErrorAction Stop
-Write-Host "Resultaten geëxporteerd naar: $OutputPath" -ForegroundColor Green
+if ($ReportType -in @('InactiveGuests', 'Both')) {
+    $DateThreshold = (Get-Date).AddMonths(-$InactiveMonths)
+    $inactiveGuestUsers = @(
+        $users | Where-Object {
+            $_.UserType -eq 'Guest' -and (
+                -not $_.SignInActivity.LastSignInDateTime -or
+                [DateTime]$_.SignInActivity.LastSignInDateTime -lt $DateThreshold
+            )
+        }
+    )
+
+    $InactiveGuestReport = $inactiveGuestUsers |
+        Select-Object DisplayName, UserPrincipalName, UserType,
+            @{Name = 'LastSignInDateTime'; Expression = { $_.SignInActivity.LastSignInDateTime } },
+            @{Name = 'InactiveMonthsThreshold'; Expression = { $InactiveMonths } }
+
+    $InactiveGuestOutputPath = Join-Path -Path $ExportDirectory -ChildPath "InactieveGastGebruikers_$datum.csv"
+    $InactiveGuestReport | Export-Csv -LiteralPath $InactiveGuestOutputPath -NoTypeInformation -Encoding UTF8 -ErrorAction Stop
+    Write-Host "Inactieve gasten geëxporteerd naar: $InactiveGuestOutputPath" -ForegroundColor Green
+}

@@ -1,13 +1,29 @@
-# Script: Office365_Mailbox_SentitemsShared.ps1
-# Purpose: Office365 Mailbox SentitemsShared
+<#
+.SYNOPSIS
+    Schakelt het opslaan van via Send As verzonden berichten in de gedeelde mailbox in of uit.
+#>
 
-# Controleer en installeer vereiste modules
-foreach ($module in @('ExchangeOnlineManagement')) {
-    if (-not (Get-Module -ListAvailable -Name $module)) {
-        Write-Host "Module '$module' wordt geïnstalleerd..." -ForegroundColor Yellow
-        Install-Module -Name $module -Force -AllowClobber -Scope CurrentUser
-    }
-    Import-Module -Name $module -ErrorAction Stop
+[CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
+param (
+    [Parameter(Mandatory)]
+    [string]$Mailbox,
+
+    [bool]$Enabled = $true
+)
+
+$ErrorActionPreference = 'Stop'
+$ModuleName = 'ExchangeOnlineManagement'
+
+if (-not (Get-Module -ListAvailable -Name $ModuleName)) {
+    Write-Host "Module '$ModuleName' wordt geïnstalleerd..." -ForegroundColor Yellow
+    Install-Module -Name $ModuleName -Scope CurrentUser -Force -AllowClobber -ErrorAction Stop
 }
+Import-Module -Name $ModuleName -ErrorAction Stop
 
-set-mailbox <mailbox name> -MessageCopyForSentAsEnabled $True
+Connect-ExchangeOnline -ShowBanner:$false -ErrorAction Stop
+
+$Description = "MessageCopyForSentAsEnabled instellen op $Enabled"
+if ($PSCmdlet.ShouldProcess($Mailbox, $Description)) {
+    Set-Mailbox -Identity $Mailbox -MessageCopyForSentAsEnabled $Enabled -ErrorAction Stop
+    Write-Host "De instelling voor '$Mailbox' staat nu op '$Enabled'." -ForegroundColor Green
+}

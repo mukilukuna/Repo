@@ -1,82 +1,78 @@
 <#
 .SYNOPSIS
-  Bulk add users from a CSV file to a Active Directory group
+    Voegt gebruikers uit CSV toe aan één of meerdere Active Directory-groepen.
 
 .DESCRIPTION
-  Import CSV file and add each user to a group.
-
-.OUTPUTS
-  none
-
-.NOTES
-  Version:        1.0
-  Author:         R. Mens
-  Creation Date:  22 march 2022
-  Purpose/Change: Initial script development
+    Met Mode SingleGroup bevat het CSV-bestand één gebruikerswaarde per regel en
+    wordt iedere gebruiker aan GroupName toegevoegd. Met Mode PerRow bevat het
+    CSV-bestand kolommen voor de gebruiker en de bijbehorende groep.
 
 .EXAMPLE
-  Add users from CSV file to selected group
+    .\Add-UsersToGroup.ps1 -Mode SingleGroup -GroupName 'SG_PowerBi' -Path C:\temp\users.csv -Filter DisplayName -WhatIf
 
-  .\add-userstogroups.ps1 -groupName "SG_PowerBi" -path c:\temp\users.csv -delimiter "," -filter "DisplayName"
+.EXAMPLE
+    .\Add-UsersToGroup.ps1 -Mode PerRow -Path C:\temp\users-groups.csv -UserColumn User -GroupColumn Group -WhatIf
 #>
 
-[CmdletBinding()]
+[CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
 param (
-    [Parameter(
-      Mandatory = $true,
-      HelpMessage = "Group name"
-    )]
-    [string] $GroupName = "",
+    [ValidateSet('SingleGroup', 'PerRow')]
+    [string]$Mode = 'SingleGroup',
 
-    [Parameter(
-      Mandatory = $true,
-      HelpMessage = "Path to CSV file"
-    )]
-    [string] $Path = "",
+    [string]$GroupName,
 
-    [Parameter(
-      Mandatory = $false,
-      HelpMessage = "CSV file delimiter"
-    )]
-    [string] $Delimiter = ",",
+    [Parameter(Mandatory)]
+    [ValidateScript({ Test-Path -LiteralPath $_ -PathType Leaf })]
+    [string]$Path,
 
-    [Parameter(
-      Mandatory = $false,
-      HelpMessage = "Find users on DisplayName, Email or UserPrincipalName"
-    )]
-    [ValidateSet("DisplayName", "Email", "UserPrincipalName")]
-    [string] $Filter = "DisplayName"
+    [char]$Delimiter = ',',
+
+    [ValidateSet('DisplayName', 'Email', 'UserPrincipalName')]
+    [string]$Filter = 'DisplayName',
+
+    [string]$UserColumn = 'User',
+
+    [string]$GroupColumn = 'Group'
 )
 
-Function Add-UsersToGroup {
-    <#
-    .SYNOPSIS
-      Get users from the requested DN
-    #>
-    process{
-        # Import the CSV File
-        $users = (Import-Csv -Path $path -Delimiter $delimiter -header "name").name
+$ErrorActionPreference = 'Stop'
 
-        # Find the users in the Active Directory
-        $users | ForEach {
-            $user =  Get-ADUser -filter "$filter -eq '$_'" | Select ObjectGUID 
-
-            if ($user) {
-                Add-ADGroupMember -Identity $groupName -Members $user
-                Write-Host "$_ added to the group"
-            }else {
-                Write-Warning "$_ not found in the Active Directory"
-            }
-        }
-    }
-}
-
-# Controleer of de ActiveDirectory module beschikbaar is (onderdeel van RSAT)
 if (-not (Get-Module -ListAvailable -Name ActiveDirectory)) {
-    Write-Warning "De ActiveDirectory module is niet gevonden. Installeer RSAT via: Add-WindowsCapability -Online -Name Rsat.ActiveDirectory.DS-LDS.Tools~~~~0.0.1.0"
-    throw "ActiveDirectory module is vereist om dit script uit te voeren."
+    throw 'De ActiveDirectory-module is niet gevonden. Installeer de RSAT Active Directory-tools.'
 }
 Import-Module -Name ActiveDirectory -ErrorAction Stop
 
-# Add user from CSV to given Group
-Add-UsersToGroup
+if ($Mode -eq 'SingleGroup' -and [string]::IsNullOrWhiteSpace($GroupName)) {
+    throw 'GroupName is verplicht bij Mode SingleGroup.'
+}
+
+$Rows = if ($Mode -eq 'SingleGroup') {
+    Import-Csv -LiteralPath $Path -Delimiter $Delimiter -Header $UserColumn
+}
+else {
+    Import-Csv -LiteralPath $Path -Delimiter $Delimiter
+}
+
+foreach ($Row in $Rows) {
+    $UserValue = [string]$Row.$UserColumn
+    $TargetGroup = if ($Mode -eq 'SingleGroup') { $GroupName } else { [string]$Row.$GroupColumn }
+
+    if ([string]::IsNullOrWhiteSpace($UserValue) -or [string]::IsNullOrWhiteSpace($TargetGroup)) {
+        Write-Warning 'CSV-regel overgeslagen: gebruiker of groep ontbreekt.'
+        continue
+    }
+
+    $EscapedUserValue = $UserValue.Replace("'", "''")
+    $User = Get-ADUser -Filter "$Filter -eq '$EscapedUserValue'" -ErrorAction Stop |
+        Select-Object -First 1
+
+    if (-not $User) {
+        Write-Warning "Gebruiker '$UserValue' is niet gevonden in Active Directory."
+        continue
+    }
+
+    if ($PSCmdlet.ShouldProcess("$UserValue -> $TargetGroup", 'Toevoegen aan AD-groep')) {
+        Add-ADGroupMember -Identity $TargetGroup -Members $User -ErrorAction Stop
+        Write-Host "Gebruiker '$UserValue' toegevoegd aan '$TargetGroup'." -ForegroundColor Green
+    }
+}
