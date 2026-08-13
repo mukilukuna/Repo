@@ -1,3 +1,11 @@
+[CmdletBinding()]
+param (
+    [string]$ExportDirectory
+)
+
+. (Join-Path $PSScriptRoot '..\..\Common\ExportPath.ps1')
+$ExportDirectory = Resolve-ExportDirectory -Path $ExportDirectory -DefaultPath 'C:\temp' -Prompt 'Exportmap voor het Exchange-rapport'
+
 # Script: SCR_EXPORTEXCHANGE.ps1
 # Purpose: SCR EXPORTEXCHANGE
 
@@ -10,7 +18,7 @@ foreach ($module in @('ExchangeOnlineManagement', 'MSOnline')) {
     Import-Module -Name $module -ErrorAction Stop
 }
 
-$Path = "C:\Users\muki.lukuna\IT Synergy\Stichting Mano - General\Professional services\Inventarisatie\export.csv"
+$Path = Join-Path -Path $ExportDirectory -ChildPath 'ExchangeExport.csv'
 
 Connect-ExchangeOnline
 # Zorg ervoor dat het exportpad bestaat

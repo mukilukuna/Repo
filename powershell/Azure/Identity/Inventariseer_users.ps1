@@ -1,7 +1,37 @@
 [CmdletBinding()]
 param (
-    [string]$ExportDirectory
+    [string]$ExportDirectory,
+
+    [Parameter(DontShow = $true)]
+    [switch]$IsolatedGraphProcess
 )
+
+if (-not $IsolatedGraphProcess) {
+    $PowerShellExecutable = (Get-Command -Name pwsh -CommandType Application -ErrorAction Stop).Source
+    $ChildArguments = @(
+        '-NoLogo'
+        '-NoProfile'
+        '-File'
+        $PSCommandPath
+        '-IsolatedGraphProcess'
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($ExportDirectory)) {
+        $ChildArguments += @('-ExportDirectory', $ExportDirectory)
+    }
+
+    Write-Host 'Microsoft Graph-inventarisatie wordt in een schone PowerShell-sessie gestart...' -ForegroundColor Cyan
+    & $PowerShellExecutable @ChildArguments
+    $ChildExitCode = $LASTEXITCODE
+
+    if ($ChildExitCode -ne 0) {
+        throw "De geïsoleerde Microsoft Graph-inventarisatie is mislukt met afsluitcode $ChildExitCode."
+    }
+
+    return
+}
+
+$ErrorActionPreference = 'Stop'
 
 . (Join-Path $PSScriptRoot '..\..\Common\ExportPath.ps1')
 $ExportDirectory = Resolve-ExportDirectory -Path $ExportDirectory
@@ -36,12 +66,17 @@ if (-not $graphModuleVersion) {
 Import-Module -Name Microsoft.Graph.Authentication -RequiredVersion $graphModuleVersion -ErrorAction Stop
 Import-Module -Name Microsoft.Graph.Users -RequiredVersion $graphModuleVersion -ErrorAction Stop
 
-Connect-MgGraph -Scopes "User.Read.All", "AuditLog.Read.All", "Directory.Read.All"
+Connect-MgGraph -Scopes "User.Read.All", "AuditLog.Read.All", "Directory.Read.All" -ErrorAction Stop
 # Datum voor de bestandsnaam
 $datum = Get-Date -Format "yyyyMMdd"
 
 # Haal alle gebruikers op met de benodigde eigenschappen
-$users = Get-MgUser -All -Property DisplayName, UserPrincipalName, JobTitle, AssignedLicenses, OnPremisesSyncEnabled, UserType, SignInActivity
+$users = @(
+    Get-MgUser -All -Property DisplayName, UserPrincipalName, MailNickname, JobTitle, AssignedLicenses, OnPremisesSyncEnabled, UserType, SignInActivity -ErrorAction Stop
+)
+if ($users.Count -eq 0) {
+    throw 'Er zijn geen gebruikers gevonden. Er wordt geen CSV-bestand aangemaakt.'
+}
 
 # Maak een array om de resultaten op te slaan
 $result = @()
@@ -85,5 +120,5 @@ foreach ($user in $users) {
 
 # Exporteer de resultaten naar een CSV-bestand
 $OutputPath = Join-Path -Path $ExportDirectory -ChildPath "AzureAD_Gebruikers_$datum.csv"
-$result | Export-Csv -LiteralPath $OutputPath -NoTypeInformation -Encoding UTF8
+$result | Export-Csv -LiteralPath $OutputPath -NoTypeInformation -Encoding UTF8 -ErrorAction Stop
 Write-Host "Resultaten geëxporteerd naar: $OutputPath" -ForegroundColor Green
