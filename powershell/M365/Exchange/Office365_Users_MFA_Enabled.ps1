@@ -8,9 +8,13 @@ Param
     [switch]$MFAEnabled,
     [switch]$MFADisabled,
     [switch]$LicensedUsersOnly,
-    [switch]$SignInAllowedUsersOnly
+    [switch]$SignInAllowedUsersOnly,
+    [string]$ExportDirectory
 
 )
+
+. (Join-Path $PSScriptRoot '..\..\Common\ExportPath.ps1')
+$ExportDirectory = Resolve-ExportDirectory -Path $ExportDirectory -DefaultPath 'C:\temp' -Prompt 'Exportmap voor het MFA-rapport'
 Function Connect_MgGraph
 {
  #Check for module installation
@@ -48,7 +52,7 @@ if((Get-MgContext) -ne "")
 $ProcessedUserCount=0
 $ExportCount=0
  #Set output file 
- $ExportCSV=".\MfaStatusReport_$((Get-Date -format yyyy-MMM-dd-ddd` hh-mm` tt).ToString()).csv"
+ $ExportCSV = Join-Path -Path $ExportDirectory -ChildPath "MfaStatusReport_$(Get-Date -Format 'yyyyMMdd_HHmmss').csv"
   $Result=""  
  $Results=@()
 

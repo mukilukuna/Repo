@@ -41,8 +41,12 @@ param(
     Mandatory = $false,
     HelpMessage = "Enter path to save the CSV file"
   )]
-  [string]$path = ".\OneDriveSizeReport-$((Get-Date -format "MMM-dd-yyyy").ToString()).csv"
+  [string]$path
 )
+
+. (Join-Path $PSScriptRoot '..\..\Common\ExportPath.ps1')
+$DefaultCSVPath = Join-Path 'C:\temp' "OneDriveSizeReport_$(Get-Date -Format 'yyyyMMdd_HHmmss').csv"
+$path = Resolve-ExportFilePath -Path $path -DefaultPath $DefaultCSVPath -Prompt 'CSV-exportbestand'
 
 Function ConnectTo-SharePoint {
   <#

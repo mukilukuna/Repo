@@ -1,3 +1,12 @@
+[CmdletBinding()]
+param (
+    [string]$ExportDirectory
+)
+
+. (Join-Path $PSScriptRoot '..\..\Common\ExportPath.ps1')
+$ExportDirectory = Resolve-ExportDirectory -Path $ExportDirectory -DefaultPath 'C:\temp' -Prompt 'Exportmap voor het public-folderrapport'
+$OutputPath = Join-Path -Path $ExportDirectory -ChildPath 'PublicFolderPermissions.csv'
+
 # Script: Office365_PublicFolders_GetPermissions.ps1
 # Purpose: Office365 PublicFolders GetPermissions
 
@@ -32,4 +41,6 @@ Permissions = $_.AccessRights
 $i++
 }
 $Result | Select Folder, User, Permissions |
-Export-CSV "C:\temp\1PublicFolderPermissions.CSV" -NoTypeInformation -Encoding UTF8
+Export-CSV -LiteralPath $OutputPath -NoTypeInformation -Encoding UTF8
+
+Write-Host "Resultaten geëxporteerd naar: $OutputPath" -ForegroundColor Green
