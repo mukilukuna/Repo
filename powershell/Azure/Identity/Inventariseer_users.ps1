@@ -7,7 +7,17 @@ param (
 )
 
 if (-not $IsolatedGraphProcess) {
-    $PowerShellExecutable = (Get-Command -Name pwsh -CommandType Application -ErrorAction Stop).Source
+    $PowerShellExecutable = Join-Path -Path $PSHOME -ChildPath 'pwsh.exe'
+    if (-not (Test-Path -LiteralPath $PowerShellExecutable -PathType Leaf)) {
+        $PowerShellExecutable = Get-Command -Name pwsh -All -CommandType Application -ErrorAction Stop |
+            Select-Object -ExpandProperty Source -Unique |
+            Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } |
+            Select-Object -First 1
+    }
+    if ([string]::IsNullOrWhiteSpace($PowerShellExecutable)) {
+        throw 'PowerShell 7 (pwsh.exe) is niet gevonden. Installeer PowerShell 7 of voeg pwsh.exe toe aan PATH.'
+    }
+
     $ChildArguments = @(
         '-NoLogo'
         '-NoProfile'
@@ -21,10 +31,15 @@ if (-not $IsolatedGraphProcess) {
     }
 
     Write-Host 'Microsoft Graph-inventarisatie wordt in een schone PowerShell-sessie gestart...' -ForegroundColor Cyan
-    & $PowerShellExecutable @ChildArguments
-    $ChildExitCode = $LASTEXITCODE
+    try {
+        & $PowerShellExecutable @ChildArguments
+        $ChildExitCode = $LASTEXITCODE
+    }
+    catch {
+        throw "De schone PowerShell-sessie kon niet worden gestart via '$PowerShellExecutable': $($_.Exception.Message)"
+    }
 
-    if ($ChildExitCode -ne 0) {
+    if ($null -eq $ChildExitCode -or $ChildExitCode -ne 0) {
         throw "De geïsoleerde Microsoft Graph-inventarisatie is mislukt met afsluitcode $ChildExitCode."
     }
 
