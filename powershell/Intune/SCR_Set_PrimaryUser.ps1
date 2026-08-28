@@ -1,5 +1,5 @@
 <#PSScriptInfo
-.VERSION        7.1.1
+.VERSION        7.4.6
 .GUID           feedbeef-beef-4dad-beef-000000000001
 .AUTHOR         @MrTbone_se (T-bone Granheden)
 .COPYRIGHT      (c) 2026 T-bone Granheden. MIT License - free to use with attribution.
@@ -31,6 +31,15 @@
     7.0.3 2026-01-19 Fixed small bugs and syntax errors
     7.1.0 2026-01-21 Minor update to logging module and a lot of variable naming changes
     7.1.1 2026-01-30 Fixed missing $SignInsStartTime
+    7.2.0 2026-02-06 Fixed skip token expiration issue with automatic query restart and deduplication
+    7.3.0 2026-02-06 Minor update to support skip token that break graph requests early
+    7.4.0 2026-02-17 Minor change to avoid mismatch  in microsoft.graph modules
+    7.4.1 2026-02-17 Fix a bug in reporting function with formating issues on some regional languages
+    7.4.2 2026-02-24 Fixed ClientSecret authentication PSCredential creation
+    7.4.3 2026-02-24 Fixed clientsecret
+    7.4.4 2026-02-24 Fix AuthClientSecret
+    7.4.5 2026-02-24 Fixed ClientSecret authentication without exposing secrets
+    7.4.6 2026-03-02 Fix to support both secure and non secure secret string using object type
 #>
 
 <#
@@ -58,7 +67,7 @@
     Please feel free to use this, but make sure to credit @MrTbone_se as the original author
 
 .LINK
-    https://example.org
+    https://tbone.se
 #>
 
 #region ---------------------------------------------------[Set Script Requirements]-----------------------------------------------
@@ -70,39 +79,48 @@
 # Customizations
 [CmdletBinding(SupportsShouldProcess)]
 param(
-    [Parameter(Mandatory = $false, HelpMessage = "Name of the script action for logging.")]
-    [string]$ScriptActionName = "Set Intune Primary User",
+    [Parameter(Mandatory = $false,          HelpMessage = "Name of the script action for logging.")]
+    [string]$ScriptActionName       = "Set Intune Primary User",
 
-    [Parameter(Mandatory = $false, HelpMessage = "Device operatingsystems to process ('All', 'Windows', 'Android', 'iOS', 'macOS'). Default is 'Windows'")]
+    [Parameter(Mandatory = $false,          HelpMessage = "Device operatingsystems to process ('All', 'Windows', 'Android', 'iOS', 'macOS'). Default is 'Windows'")]
     [ValidateSet('All', 'Windows', 'Android', 'iOS', 'macOS')]
-    [string[]]$OperatingSystems = @('Windows'),
+    [string[]]$OperatingSystems     = @('Windows'),
         
-    [Parameter(Mandatory = $false, HelpMessage = "Filter Intune only managed devices (true) or also include Co-managed devices (false). Default is true")]
-    [bool]$IntuneOnly = $true,
+    [Parameter(Mandatory = $false,          HelpMessage = "Filter Intune only managed devices (true) or also include Co-managed devices (false). Default is true")]
+    [bool]$IntuneOnly               = $true,
 
-    [Parameter(Mandatory = $false, HelpMessage = "Filter to only include devicenames that starts with specific strings like ('Tbone', 'Desktop'). Default is blank")]
-    [string[]]$IncludedDeviceNames = @(),
+    [Parameter(Mandatory = $false,          HelpMessage = "Filter to only include devicenames that starts with specific strings like ('Tbone', 'Desktop'). Default is blank")]
+    [string[]]$IncludedDeviceNames  = @(),
 
-    [Parameter(Mandatory = $false, HelpMessage = "Filter to exclude devicenames that starts with specific strings like ('Tbone', 'Desktop'). Default is blank")]
-    [string[]]$ExcludedDeviceNames = @(),
+    [Parameter(Mandatory = $false,          HelpMessage = "Filter to exclude devicenames that starts with specific strings like ('Tbone', 'Desktop'). Default is blank")]
+    [string[]]$ExcludedDeviceNames  = @(),
 
-    [Parameter(Mandatory = $false, HelpMessage = "Filter to exclude specific accounts as primary owners for example enrollment accounts ('user53@example.com','user54@example.com'). Default is blank")]
-    [string[]]$ReplaceUserAccounts = @(),
+    [Parameter(Mandatory = $false,          HelpMessage = "Filter to exclude specific accounts as primary owners for example enrollment accounts ('wds@tbone.se','install@tbone.se'). Default is blank")]
+    [string[]]$ReplaceUserAccounts  = @(),
 
-    [Parameter(Mandatory = $false, HelpMessage = "Filter to keep specific accounts that always should be keept as primary owners ('user55@example.com'). Default is blank")]
-    [string[]]$KeepUserAccounts = @(),
+    [Parameter(Mandatory = $false,          HelpMessage = "Filter to keep specific accounts that always should be keept as primary owners ('Monitoring@tbone.se'). Default is blank")]
+    [string[]]$KeepUserAccounts     = @(),
 
-    [Parameter(Mandatory = $false, HelpMessage = "Time period in days to retrieve user sign-in activity logs. Default is 30 days")]
-    [ValidateRange(1, 90)]
-    [int]$SignInsTimeSpan = 30,
+    [Parameter(Mandatory = $false,          HelpMessage = "Regex to filter the groups from which to select the computers to be analyzed. Ex: '^INTUNE .*$'")]
+    [string[]]$IncludedGroupRegex   = @(),
 
-    [Parameter(Mandatory = $false, HelpMessage = "Time period in days to retrieve active devices. Default is 30 days")]
-    [ValidateRange(1, 365)]
-    [int]$DeviceTimeSpan = 30,
+    [Parameter(Mandatory = $false,          HelpMessage = "Regex to filter the groups from which to select the computers to exclude from the analysis. Ex: '^INTUNE - (SHARED PCs|KIOSKs)$'")]
+    [string[]]$ExcludedGroupRegex   = @(),
 
-    [Parameter(Mandatory = $false, HelpMessage = "Testmode, same as -WhatIf. Default is false")]
-    [bool]$Testmode = $false,
-    # ==========> Authentication (Invoke-ConnectMgGraph) Leave blank if use Interactive or Managed Identity <==============
+    [Parameter(Mandatory = $false,          HelpMessage = "Regex to filter valid UPNs as primary users. Ex: '^.*@contoso\.com$'")]
+    [string]$ValidUserUpnRegex      = "",
+
+    [Parameter(Mandatory = $false,          HelpMessage = "Time period in days to retrieve user sign-in activity logs. Default is 30 days")]
+    [ValidateRange(1,90)]
+    [int]$SignInsTimeSpan           = 30,
+
+    [Parameter(Mandatory = $false,          HelpMessage = "Time period in days to retrieve active devices. Default is 30 days")]
+    [ValidateRange(1,365)]
+    [int]$DeviceTimeSpan            = 30,
+
+    [Parameter(Mandatory = $false,          HelpMessage = "Testmode, same as -WhatIf. Default is false")]
+    [bool]$Testmode                 = $false,
+# ==========> Authentication (Invoke-ConnectMgGraph) Leave blank if use Interactive or Managed Identity <==============
     [Parameter(                             HelpMessage = "Entra ID Tenant ID (directory ID) (required for Client Secret or Certificate authentication)")]
     [ValidateNotNullOrEmpty()]
     [string]$AuthTenantId,
@@ -111,9 +129,9 @@ param(
     [ValidateNotNullOrEmpty()]
     [string]$AuthClientId,
     
-    [Parameter(                             HelpMessage = "Client Secret as SecureString for app-only authentication (require also ClientId and TenantId)")]
+    [Parameter(                             HelpMessage = "Client Secret as SecureString or string for app-only authentication (require also ClientId and TenantId)")]
     [ValidateNotNull()]
-    [SecureString]$AuthClientSecret,
+    [Object]$AuthClientSecret, 
     
     [Parameter(                             HelpMessage = "Certificate thumbprint for certificate-based authentication (if certificate is stored in CurrentUser or LocalMachine store)")]
     [ValidateNotNullOrEmpty()]
@@ -129,75 +147,70 @@ param(
     
     [Parameter(                             HelpMessage = "Password for certificate file as SecureString (required if certificate is stored as a file and password-protected)")]
     [SecureString]$AuthCertPassword,
-    # ==========> Logging (Invoke-TboneLog) <==============================================================================
-    [Parameter(Mandatory = $false, HelpMessage = 'Name of Log, to set name for Eventlog and Filelog')]
-    [string]$LogName = "",
+# ==========> Logging (Invoke-TboneLog) <==============================================================================
+    [Parameter(Mandatory = $false,          HelpMessage='Name of Log, to set name for Eventlog and Filelog')]
+    [string]$LogName                = "",
 
-    [Parameter(Mandatory = $false, HelpMessage = 'Show output in console during execution')]
-    [bool]$LogToGUI = $true,
+    [Parameter(Mandatory = $false,          HelpMessage='Show output in console during execution')]
+    [bool]$LogToGUI                 = $true,
 
-    [Parameter(Mandatory = $false, HelpMessage = 'Write complete log array to Windows Event when script ends')]
-    [bool]$LogToEventlog = $false,
+    [Parameter(Mandatory = $false,          HelpMessage='Write complete log array to Windows Event when script ends')]
+    [bool]$LogToEventlog            = $false,
 
-    [Parameter(Mandatory = $false, HelpMessage = 'EventLog IDs as hashtable: @{Info=11001; Warn=11002; Error=11003}')]
-    [hashtable]$LogEventIds = @{Info = 11001; Warn = 11002; Error = 11003 },
+    [Parameter(Mandatory = $false,          HelpMessage='EventLog IDs as hashtable: @{Info=11001; Warn=11002; Error=11003}')]
+    [hashtable]$LogEventIds         = @{Info=11001; Warn=11002; Error=11003},
 
-    [Parameter(Mandatory = $false, HelpMessage = 'Return complete log array as Host output when script ends (Good for Intune Remediations)')]
-    [bool]$LogToHost = $false,
+    [Parameter(Mandatory = $false,          HelpMessage='Return complete log array as Host output when script ends (Good for Intune Remediations)')]
+    [bool]$LogToHost                = $false,
 
-    [Parameter(Mandatory = $false, HelpMessage = 'Write complete log array to Disk when script ends')]
-    [bool]$LogToDisk = $false,
+    [Parameter(Mandatory = $false,          HelpMessage='Write complete log array to Disk when script ends')]
+    [bool]$LogToDisk                = $false,
 
-    [Parameter(Mandatory = $false, HelpMessage = 'Path where Disk logs are saved (if LogToDisk is enabled)')]
-    [string]$LogToDiskPath = "$env:TEMP",
+    [Parameter(Mandatory = $false,          HelpMessage='Path where Disk logs are saved (if LogToDisk is enabled)')]
+    [string]$LogToDiskPath          = "$env:TEMP",
 
-    [Parameter(Mandatory = $false, HelpMessage = "Enable verbose logging. Default is false")]
-    [bool]$LogVerboseEnabled = $false,
-    # ==========> Reporting (Invoke-ScriptReport) <========================================================================
-    [Parameter(Mandatory = $false, HelpMessage = "Title of the report")]
-    [string]$ReportTitle = "",
+    [Parameter(Mandatory = $false,          HelpMessage = "Enable verbose logging. Default is false")]
+    [bool]$LogVerboseEnabled        = $false,
+# ==========> Reporting (Invoke-ScriptReport) <========================================================================
+    [Parameter(Mandatory = $false,          HelpMessage = "Title of the report")]
+    [string]$ReportTitle            = "",
 
-    [Parameter(Mandatory = $false, HelpMessage = "Return report with statistics on how many changed objects. Default is true")]
-    [bool]$ReportEnabled = $true,
+    [Parameter(Mandatory = $false,          HelpMessage = "Return report with statistics on how many changed objects. Default is true")]
+    [bool]$ReportEnabled            = $true,
 
-    [Parameter(Mandatory = $false, HelpMessage = "Include detailed device changes in the report. Default is true")]
-    [bool]$ReportDetailed = $true,
+    [Parameter(Mandatory = $false,          HelpMessage = "Include detailed device changes in the report. Default is true")]
+    [bool]$ReportDetailed           = $true,
 
-    [Parameter(Mandatory = $false, HelpMessage = "Save report to disk. Default is false")]
-    [bool]$ReportToDisk = $false,    
+    [Parameter(Mandatory = $false,          HelpMessage = "Save report to disk. Default is false")]
+    [bool]$ReportToDisk             = $false,    
 
-    [Parameter(Mandatory = $false, HelpMessage = "Path where to save the report. When omitted, the script asks for it in the terminal.")]
-    [string]$ReportToDiskPath,
-    # ==========> Throttling and Retry (Invoke-MgGraphRequestSingle and Invoke-MgGraphRequestBatch) <======================
-    [Parameter(Mandatory = $false, HelpMessage = "Wait time in milliseconds between throttled requests. Default is 1000")]
-    [ValidateRange(100, 5000)]
-    [int]$GraphWaitTime = 1000,
+    [Parameter(Mandatory = $false,          HelpMessage = "Path where to save the report. Default is TEMP directory for Azure Automation compatibility")]
+    [string]$ReportToDiskPath       = "$env:TEMP",
+# ==========> Throttling and Retry (Invoke-MgGraphRequestSingle and Invoke-MgGraphRequestBatch) <======================
+    [Parameter(Mandatory = $false,          HelpMessage = "Wait time in milliseconds between throttled requests. Default is 1000")]
+    [ValidateRange(100,5000)]
+    [int]$GraphWaitTime              = 1000,
 
-    [Parameter(Mandatory = $false, HelpMessage = "Maximum number of retry attempts for failed requests. Default is 3")]
-    [ValidateRange(1, 10)]
-    [int]$GraphMaxRetry = 3
-)
+    [Parameter(Mandatory = $false,          HelpMessage = "Maximum number of retry attempts for failed requests. Default is 3")]
+    [ValidateRange(1,10)]
+    [int]$GraphMaxRetry              = 3
+    )
 #endregion
-
-if ($ReportToDisk) {
-    . (Join-Path $PSScriptRoot '..\Common\ExportPath.ps1')
-    $DefaultReportPath = Join-Path $env:TEMP 'Reports'
-    $ReportToDiskPath = Resolve-ExportDirectory -Path $ReportToDiskPath -DefaultPath $DefaultReportPath -Prompt 'Exportmap voor het Intune Primary User-rapport'
-}
 
 #region ---------------------------------------------------[Modifiable Variables and defaults]------------------------------------
 # Application IDs for the search of sign-in logs on different OS
-[string]$AppId_Android = '9ba1a5c7-f17a-4de9-a1f1-6178c8d51223'  # Microsoft Intune Company Portal
-[string]$AppId_iOS = 'e8be65d6-d430-4289-a665-51bf2a194bda'  # Microsoft 365 App Catalog Services
-[string]$AppId_macOS = '29d9ed98-a469-4536-ade2-f981bc1d605e'  # Microsoft Authentication Broker
-[string]$AppId_Windows = '38aa3b87-a06d-4817-b275-7a316988d93b'  # Windows Sign In
-[string]$AppId_Windows_Fallback = 'fc0f3af4-6835-4174-b806-f7db311fd2f3'  # Microsoft Intune Windows Agent. Fallback if no Windows Sign In logs are found
+[string]$AppId_Android           = '9ba1a5c7-f17a-4de9-a1f1-6178c8d51223'  # Microsoft Intune Company Portal
+[string]$AppId_iOS               = 'e8be65d6-d430-4289-a665-51bf2a194bda'  # Microsoft 365 App Catalog Services
+[string]$AppId_macOS             = '29d9ed98-a469-4536-ade2-f981bc1d605e'  # Microsoft Authentication Broker
+[string]$AppId_Windows           = '38aa3b87-a06d-4817-b275-7a316988d93b'  # Windows Sign In
+[string]$AppId_Windows_Fallback  = 'fc0f3af4-6835-4174-b806-f7db311fd2f3'  # Microsoft Intune Windows Agent. Fallback if no Windows Sign In logs are found
 
 # ==========> Authentication (Invoke-ConnectMgGraph) <=================================================================
 [System.Collections.ArrayList]$RequiredScopes = @(  # Required Graph API permission scopes used in function Invoke-ConnectMgGraph
     "DeviceManagementManagedDevices.ReadWrite.All", # Read/write Intune device to set Primary Users
     "AuditLog.Read.All",                            # Read sign-in logs
-    "User.Read.All"                                 # Read users
+    "User.Read.All",                                # Read users
+    "GroupMember.Read.All"                          # Read group members
 )
 #endregion
 
@@ -205,48 +218,98 @@ if ($ReportToDisk) {
 # Exit if running as a managed identity in PowerShell 7.2 due to bugs connecting to MgGraph https://github.com/microsoftgraph/msgraph-sdk-powershell/issues/3151
 if ($env:IDENTITY_ENDPOINT -and $env:IDENTITY_HEADER -and $PSVersionTable.PSVersion -eq [version]"7.2.0") {
     Write-Error "This script cannot run as a managed identity in PowerShell 7.2. Please use a different version of PowerShell."
-    exit 1
-}
+    exit 1}
 # set strict mode to latest version
 Set-StrictMode -Version Latest
 
 # Save original preference states at script scope for restoration in finally block
-[System.Management.Automation.ActionPreference]$script:OriginalErrorActionPreference = $ErrorActionPreference
-[System.Management.Automation.ActionPreference]$script:OriginalVerbosePreference = $VerbosePreference
-[bool]$script:OriginalWhatIfPreference = $WhatIfPreference
+[System.Management.Automation.ActionPreference]$script:OriginalErrorActionPreference    = $ErrorActionPreference
+[System.Management.Automation.ActionPreference]$script:OriginalVerbosePreference        = $VerbosePreference
+[bool]$script:OriginalWhatIfPreference                                                  = $WhatIfPreference
 
 # Set verbose- and whatif- preference based on parameter instead of hardcoded values
-if ($LogVerboseEnabled) { $VerbosePreference = 'Continue' }                   # Set verbose logging based on the parameter $LogVerboseEnabled
-else { $VerbosePreference = 'SilentlyContinue' }
-if ($Testmode) { $WhatIfPreference = 1 }                             # Manually enable whatif mode with parameter $Testmode for testing
+if ($LogVerboseEnabled)     {$VerbosePreference = 'Continue'}                   # Set verbose logging based on the parameter $LogVerboseEnabled
+else                        {$VerbosePreference = 'SilentlyContinue'}
+if($Testmode)               {$WhatIfPreference = 1}                             # Manually enable whatif mode with parameter $Testmode for testing
 #endregion
 
 #region ---------------------------------------------------[Import Modules and Extensions]-----------------------------------------
-# Check if Microsoft.Graph.Authentication module is already loaded, if not import it silently by suppressing verbose output
+# Import Microsoft.Graph.Authentication with automatic version conflict resolution
 [string]$ModuleName = 'Microsoft.Graph.Authentication'
 if (-not (Get-Module -Name $ModuleName)) {
-    & { $VerbosePreference = 'SilentlyContinue'; Import-Module $ModuleName -ErrorAction Stop }
-}
-else { Write-Verbose "Module '$ModuleName' is already loaded" }
+    try { # Try normal import first
+        & {$VerbosePreference = 'SilentlyContinue'; Import-Module $ModuleName -ErrorAction Stop}
+        Write-Verbose "Imported $ModuleName v$((Get-Module -Name $ModuleName).Version)"
+    }
+    catch { # Reported bug with missmatch version. This will catch the error and try to clean up and retry the import
+        if ($_.Exception -is [System.TypeLoadException] -or $_.Exception.Message -match 'does not have an implementation') {
+            Write-Warning "Module version conflict detected - cleaning up and retrying"
+            & {$VerbosePreference = 'SilentlyContinue'; Get-Module Microsoft.Graph.* | Remove-Module -Force -ErrorAction SilentlyContinue}
+            [version]$LatestVersion = (Get-Module -Name $ModuleName -ListAvailable | Sort-Object Version -Descending | Select-Object -First 1).Version
+            & {$VerbosePreference = 'SilentlyContinue'; Import-Module $ModuleName -RequiredVersion $LatestVersion -Force -ErrorAction Stop}
+            Write-Verbose "Resolved conflict - imported $ModuleName v$LatestVersion"
+        } else {throw}
+    }
+} else {Write-Verbose "Module '$ModuleName' already loaded v$((Get-Module -Name $ModuleName).Version)"}
 #endregion
 
 #region ---------------------------------------------------[Static Variables]------------------------------------------------------
 # ==========> Logging (Invoke-TboneLog) <==============================================================================
-if ([string]::IsNullOrWhiteSpace($LogName)) { [string]$LogName = $ScriptActionName }           # Logname defaults to script action name
+if([string]::IsNullOrWhiteSpace($LogName)) {[string]$LogName = $ScriptActionName}           # Logname defaults to script action name
 # ==========> Reporting (Invoke-ScriptReport) <========================================================================
-if ([string]::IsNullOrWhiteSpace($ReportTitle)) { [string]$ReportTitle = $ScriptActionName }   # Report title defaults to script action name
+if([string]::IsNullOrWhiteSpace($ReportTitle)) {[string]$ReportTitle = $ScriptActionName}   # Report title defaults to script action name
 [datetime]$ReportStartTime = ([DateTime]::Now)                                              # Script start time for reporting
 [hashtable]$ReportResults = @{}                                                             # Initialize empty hashtable for report results
-[scriptblock]$AddReport = { param($Target, $OldValue, $NewValue, $Action, $Details)              # Small inline function to add report entries
-    if (-not $ReportResults.ContainsKey($Action)) { $ReportResults[$Action] = [System.Collections.ArrayList]::new() }
-    $null = $ReportResults[$Action].Add([PSCustomObject]@{Target = $Target; OldValue = $OldValue; NewValue = $NewValue; Action = $Action; Details = $Details }) }
+[scriptblock]$AddReport = {param($Target,$OldValue,$NewValue,$Action,$Details)              # Small inline function to add report entries
+    if(-not $ReportResults.ContainsKey($Action)){$ReportResults[$Action]=[System.Collections.ArrayList]::new()}
+    $null=$ReportResults[$Action].Add([PSCustomObject]@{Target=$Target;OldValue=$OldValue;NewValue=$NewValue;Action=$Action;Details=$Details})}
 # Data collection variables - initialized dynamically during script execution
 [datetime]$SignInsStartTime = (Get-Date).AddDays(-$SigninsTimeSpan) # Sign-in logs start time    
 #endregion
 
 #region ---------------------------------------------------[Functions]------------------------------------------------------------
+function Get-MgDeviceIdsFromGroupRegex {
+<#
+.SYNOPSIS
+    Retrieves the IDs (AzureAdDeviceId) of the devices that belong to the groups matching the regular expressions.
+#>
+    [CmdletBinding()]
+    param(
+        [string[]]$GroupRegexes
+    )
+    
+    [System.Collections.Generic.HashSet[string]]$DeviceIds = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    if (-not $GroupRegexes -or $GroupRegexes.Count -eq 0) { return $DeviceIds }
+
+    Write-Verbose "Searching for groups that match the Regex patterns..."
+    $AllGroups = Invoke-MgGraphRequestSingle -GraphMethod 'GET' -GraphObject 'groups' -GraphProperties 'id,displayName'
+    
+    [string]$CombinedRegex = ($GroupRegexes -join '|')
+    $MatchedGroups = $AllGroups | Where-Object { $_.displayName -match $CombinedRegex }
+    
+    Write-Verbose "$($MatchedGroups.Count) groups matching the patterns have been found."
+
+    foreach ($Group in $MatchedGroups) {
+        Write-Verbose "Retrieving transitive members of the group: $($Group.displayName)"
+        $Members = Invoke-MgGraphRequestSingle -GraphMethod 'GET' -GraphObject "groups/$($Group.id)/transitiveMembers" -GraphProperties 'deviceId' -GraphCount $true
+        
+        $MemberList = if ($null -ne $Members -and $Members.PSObject.Properties.Match('Items').Count -gt 0) { $Members.Items } else { $Members }
+        
+        if ($MemberList) {
+            foreach ($Member in $MemberList) {
+                if (
+                    $Member.'@odata.type' -eq '#microsoft.graph.device' -and
+                    -not [String]::IsNullOrEmpty($Member.deviceId)
+                    ) { [void]$DeviceIds.Add($Member.deviceId) }
+            }
+        }
+    }
+    
+    Write-Verbose "Total unique devices collected: $($DeviceIds.Count)"
+    return $DeviceIds
+}
 function Invoke-ConnectMgGraph {
-    <#
+<#
 .SYNOPSIS
     Connects to Microsoft Graph API with multiple authentication methods.
 .DESCRIPTION
@@ -258,6 +321,8 @@ function Invoke-ConnectMgGraph {
     Version History:
     1.0 - Initial version
     2.0 - 2026-01-09 - Changed parameter names and fixed minor bugs on certificate authentication
+    2.1 - 2026-02-24 - Fixed ClientSecret authentication PSCredential creation
+    2.2 - 2026-03-01 - Fix to support both secure and non secure secret string using object type
 #>
     [CmdletBinding()]
     param (
@@ -272,9 +337,9 @@ function Invoke-ConnectMgGraph {
         [ValidateNotNullOrEmpty()]
         [string]$AuthClientId, 
 
-        [Parameter(             HelpMessage = "Client Secret as SecureString for app-only authentication (require also ClientId and TenantId)")]
+        [Parameter(             HelpMessage = "Client Secret as SecureString or stringfor app-only authentication (require also ClientId and TenantId)")]
         [ValidateNotNull()]
-        [SecureString]$AuthClientSecret,
+        [Object]$AuthClientSecret,
 
         [Parameter(             HelpMessage = "Certificate subject name for certificate-based authentication (if certificate is stored in CurrentUser or LocalMachine store)")]
         [ValidateNotNullOrEmpty()]
@@ -297,15 +362,15 @@ function Invoke-ConnectMgGraph {
         [string]$ResourceURL = "https://graph.microsoft.com/"
         
         # Detect authentication method based on parameters and environment (priority: ClientSecret > Certificate > ManagedIdentity > Interactive)
-        [bool]$HasClientId = -not [string]::IsNullOrWhiteSpace($AuthClientId)
-        [bool]$HasTenantId = -not [string]::IsNullOrWhiteSpace($AuthTenantId)
+        [bool]$HasClientId     = -not [string]::IsNullOrWhiteSpace($AuthClientId)
+        [bool]$HasTenantId     = -not [string]::IsNullOrWhiteSpace($AuthTenantId)
         [bool]$HasClientSecret = $null -ne $AuthClientSecret
-        [bool]$HasCertInput = -not [string]::IsNullOrWhiteSpace($AuthCertThumbprint) -or -not [string]::IsNullOrWhiteSpace($AuthCertName) -or -not [string]::IsNullOrWhiteSpace($AuthCertPath)
+        [bool]$HasCertInput    = -not [string]::IsNullOrWhiteSpace($AuthCertThumbprint) -or -not [string]::IsNullOrWhiteSpace($AuthCertName) -or -not [string]::IsNullOrWhiteSpace($AuthCertPath)
 
-        [string]$AuthMethod = if ($HasClientSecret -and $HasClientId -and $HasTenantId) { 'ClientSecret' }
-        elseif ($HasCertInput -and $HasClientId -and $HasTenantId) { 'Certificate' }
-        elseif ($env:IDENTITY_ENDPOINT -and $env:IDENTITY_HEADER) { 'ManagedIdentity' }
-        else { 'Interactive' }
+        [string]$AuthMethod = if ($HasClientSecret -and $HasClientId -and $HasTenantId) {'ClientSecret'}
+        elseif ($HasCertInput -and $HasClientId -and $HasTenantId)                      {'Certificate'}
+        elseif ($env:IDENTITY_ENDPOINT -and $env:IDENTITY_HEADER)                       {'ManagedIdentity'}
+        else                                                                            {'Interactive'}
         Write-Verbose "Using authentication method: $AuthMethod"
     }
 
@@ -327,8 +392,7 @@ function Invoke-ConnectMgGraph {
                         }
                         Write-Verbose "Existing connection missing scopes: $($MissingScopes -join ', ')"
                         Disconnect-MgGraph -ErrorAction SilentlyContinue
-                    }
-                    else {
+                    } else {
                         # For app-only auth, reuse existing connection
                         return $Context.Account
                     }
@@ -357,12 +421,11 @@ function Invoke-ConnectMgGraph {
                     
                     if ($GraphVersion -ge [version]"2.0.0") {
                         $ConnectParams['Identity'] = $true
-                    }
-                    else {
+                    } else {
                         # For older SDK versions, get token manually from managed identity endpoint
                         [hashtable]$Headers = @{
                             'X-IDENTITY-HEADER' = $env:IDENTITY_HEADER
-                            'Metadata'          = 'True'
+                            'Metadata' = 'True'
                         }
                         $Response = Invoke-RestMethod -Uri "$($env:IDENTITY_ENDPOINT)?resource=$ResourceURL" -Method GET -Headers $Headers -TimeoutSec 30 -ErrorAction Stop
                         if (-not $Response -or [string]::IsNullOrWhiteSpace($Response.access_token)) {
@@ -379,10 +442,13 @@ function Invoke-ConnectMgGraph {
                     if (-not $HasClientId -or -not $HasTenantId) {
                         throw "ClientSecret authentication requires both ClientId and TenantId."
                     }
-                    # Convert SecureString to PSCredential to build ClientCredential
-                    [System.Management.Automation.PSCredential]$ClientCredential = [System.Management.Automation.PSCredential]::new($AuthClientId, $AuthClientSecret)
-                    $ConnectParams['ClientId'] = $AuthClientId
-                    $ConnectParams['TenantId'] = $AuthTenantId
+                    # Convert to SecureString if it's a plain string
+                    [SecureString]$SecureClientSecret = if ($AuthClientSecret -is [SecureString]) {$AuthClientSecret}
+                        elseif ($AuthClientSecret -is [string]) {ConvertTo-SecureString -String $AuthClientSecret -AsPlainText -Force}
+                        else {throw "AuthClientSecret must be either a string or SecureString"}
+                    # Now lets use the secure string to build credentials    
+                    [System.Management.Automation.PSCredential]$ClientCredential = [System.Management.Automation.PSCredential]::new($AuthClientId, $SecureClientSecret)
+                    $ConnectParams['TenantId']               = $AuthTenantId
                     $ConnectParams['ClientSecretCredential'] = $ClientCredential
                     Write-Verbose "Using ClientId: $AuthClientId, TenantId: $AuthTenantId"
                 }
@@ -423,8 +489,7 @@ function Invoke-ConnectMgGraph {
                                     $AuthCertPassword,
                                     $KeyFlags
                                 )
-                            }
-                            else {
+                            } else {
                                 $Cert = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($AuthCertPath, [string]::Empty, $KeyFlags)
                             }
                             
@@ -504,7 +569,7 @@ function Invoke-ConnectMgGraph {
     }
 }
 function Invoke-TboneLog { 
-    <#
+<#
 .SYNOPSIS
     Unified tiny logger for PowerShell 5.1–7.5 and Azure Automation; overrides Write-* cmdlets and stores all messages in-memory
 .DESCRIPTION
@@ -522,80 +587,82 @@ function Invoke-TboneLog {
 #>
     [CmdletBinding()]
     param(
-        [Parameter(                     HelpMessage = 'Start=Begin logging, Stop=End and output log array')]
-        [ValidateSet('Start', 'Stop')]
+        [Parameter(                     HelpMessage='Start=Begin logging, Stop=End and output log array')]
+        [ValidateSet('Start','Stop')]
         [string]$LogMode,
-        [Parameter(                     HelpMessage = 'Name of Log, to set name for Eventlog and Filelog')]
-        [string]$LogName = "PowerShellScript",
-        [Parameter(                     HelpMessage = 'Show output in console during execution')]
-        [bool]$LogToGUI = $true,
-        [Parameter(                     HelpMessage = 'Write complete log array to Windows Eventlog when script ends')]
-        [bool]$LogToEventlog = $true,
-        [Parameter(                     HelpMessage = 'EventLog IDs as hashtable: @{Info=11001; Warn=11002; Error=11003}')]
-        [hashtable]$LogEventIds = @{Info = 11001; Warn = 11002; Error = 11003 },
-        [Parameter(                     HelpMessage = 'Return complete log array as Host output when script ends (Good for Intune Remediations)')]
-        [bool]$LogToHost = $True,
-        [Parameter(                     HelpMessage = 'Write complete log array to filelog on disk when script ends')]
-        [bool]$LogToDisk = $true,
-        [Parameter(                     HelpMessage = 'Path where Disk logs are saved (if LogToDisk is enabled)')]
-        [string]$LogPath = "$env:TEMP"
+        [Parameter(                     HelpMessage='Name of Log, to set name for Eventlog and Filelog')]
+        [string]$LogName        = "PowerShellScript",
+        [Parameter(                     HelpMessage='Show output in console during execution')]
+        [bool]$LogToGUI         = $true,
+        [Parameter(                     HelpMessage='Write complete log array to Windows Eventlog when script ends')]
+        [bool]$LogToEventlog    = $true,
+        [Parameter(                     HelpMessage='EventLog IDs as hashtable: @{Info=11001; Warn=11002; Error=11003}')]
+        [hashtable]$LogEventIds = @{Info=11001; Warn=11002; Error=11003},
+        [Parameter(                     HelpMessage='Return complete log array as Host output when script ends (Good for Intune Remediations)')]
+        [bool]$LogToHost        = $True,
+        [Parameter(                     HelpMessage='Write complete log array to filelog on disk when script ends')]
+        [bool]$LogToDisk        = $true,
+        [Parameter(                     HelpMessage='Path where Disk logs are saved (if LogToDisk is enabled)')]
+        [string]$LogPath        = "$env:TEMP"
     )
     # Auto-detect mode: if logger functions is already loaded in memory and no mode specified, assume Stop
-    if (!$LogMode) { $LogMode = if (Get-Variable -Name _l -Scope Global -EA 0) { 'Stop' }else { 'Start' } }
-    if (!$LogPath) { $LogPath = if ($global:_p) { $global:_p }elseif ($env:TEMP) { $env:TEMP }else { '/tmp' } }
+    if(!$LogMode){$LogMode=if(Get-Variable -Name _l -Scope Global -EA 0){'Stop'}else{'Start'}}
+    if(!$LogPath){$LogPath=if($global:_p){$global:_p}elseif($env:TEMP){$env:TEMP}else{'/tmp'}}
     # Stop mode: Save logs and cleanup
     if ($LogMode -eq 'Stop') {
-        if ((Get-Variable -Name _l -Scope Global -EA 0) -and (Test-Path function:\global:_Save)) { _Save; if ($global:_r) { , $global:_l.ToArray() } }
+        if((Get-Variable -Name _l -Scope Global -EA 0) -and (Test-Path function:\global:_Save)){_Save;if($global:_r){,$global:_l.ToArray()}}
         Unregister-Event -SourceIdentifier PowerShell.Exiting -ea 0 -WhatIf:$false
-        if (Test-Path function:\global:_Clean) { _Clean }
+        if(Test-Path function:\global:_Clean){_Clean}
         return
     }
     # Start mode: Initialize logging and proxy all Write-* functions
     if ($LogMode -eq 'Start') {
         # Create helper functions and variables
-        $global:_az = $env:AZUREPS_HOST_ENVIRONMENT -or $env:AUTOMATION_ASSET_ACCOUNTID # Detect Azure Automation environment
-        $global:_l = [Collections.Generic.List[string]]::new(); $global:_g = $LogToGUI; $global:_s = $Logname; $global:_n = "{0}-{1:yyyyMMdd-HHmmss}" -f $Logname, (Get-Date); $global:_p = $LogPath; $global:_d = $LogToDisk; $global:_e = $LogToEventlog; $global:_i = $LogEventIds; $global:_r = $LogToHost; $global:_w = ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT)
-        if (!(Test-Path function:\global:_Time)) { function global:_Time { Get-Date -f 'yyyy-MM-dd,HH:mm:ss' } }
-        if (!(Test-Path function:\global:_ID)) { function global:_ID { $c = (Get-PSCallStack)[2]; $n = if ($c.Command -and $c.Command -ne '<ScriptBlock>') { $c.Command }elseif ($c.FunctionName -and $c.FunctionName -ne '<ScriptBlock>') { $c.FunctionName }else { 'Main-Script' }; if ($n -like '*.ps1') { 'Main-Script' }else { $n } } }
-        if (!(Test-Path function:\global:_Save)) { function global:_Save { try { if ($global:_d) { [IO.Directory]::CreateDirectory($global:_p) | Out-Null; [IO.File]::WriteAllLines((Join-Path $global:_p "$($global:_n).log"), $global:_l.ToArray()) }; if ($global:_e -and $global:_w) { $isAdmin = $false; try { $id = [Security.Principal.WindowsIdentity]::GetCurrent(); $isAdmin = ([Security.Principal.WindowsPrincipal]::new($id)).IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator) }catch {}; $la = $global:_l -join "`n"; $h = $la -match ',ERROR,'; $et = if ($h) { 'Error' }elseif ($la -match ',WARN,') { 'Warning' }else { 'Information' }; $eid = if ($h) { $global:_i.Error }elseif ($la -match ',WARN,') { $global:_i.Warn }else { $global:_i.Info }; $ok = $false; try { Write-EventLog -LogName Application -Source $global:_s -EventId $eid -EntryType $et -Message $la -EA Stop; $ok = $true }catch {}; if (-not $ok -and $isAdmin) { try { [Diagnostics.EventLog]::CreateEventSource($global:_s, 'Application') }catch {}; try { Write-EventLog -LogName Application -Source $global:_s -EventId $eid -EntryType $et -Message $la }catch {} } } }catch {} } }
-        if (!(Test-Path function:\global:_Clean)) { function global:_Clean { $WhatIfPreference = $false; Remove-Item -Path function:\Write-Host, function:\Write-Output, function:\Write-Warning, function:\Write-Error, function:\Write-Verbose, function:\_Save, function:\_Clean, function:\_ID, function:\_Time -ea 0 -Force; Remove-Variable -Name _l, _g, _s, _n, _p, _d, _e, _i, _r, _w, _az -Scope Global -ea 0 } }
+        $global:_az=$env:AZUREPS_HOST_ENVIRONMENT -or $env:AUTOMATION_ASSET_ACCOUNTID # Detect Azure Automation environment
+        $global:_l=[Collections.Generic.List[string]]::new();$global:_g=$LogToGUI;$global:_s=$Logname;$global:_n="{0}-{1:yyyyMMdd-HHmmss}"-f$Logname,(Get-Date);$global:_p=$LogPath;$global:_d=$LogToDisk;$global:_e=$LogToEventlog;$global:_i=$LogEventIds;$global:_r=$LogToHost;$global:_w=([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT)
+        if(!(Test-Path function:\global:_Time)){function global:_Time{Get-Date -f 'yyyy-MM-dd,HH:mm:ss'}}
+        if(!(Test-Path function:\global:_ID)){function global:_ID{$c=(Get-PSCallStack)[2];$n=if($c.Command -and $c.Command -ne '<ScriptBlock>'){$c.Command}elseif($c.FunctionName -and $c.FunctionName -ne '<ScriptBlock>'){$c.FunctionName}else{'Main-Script'};if($n -like '*.ps1'){'Main-Script'}else{$n}}}
+        if(!(Test-Path function:\global:_Save)){function global:_Save{try{if($global:_d){[IO.Directory]::CreateDirectory($global:_p)|Out-Null;[IO.File]::WriteAllLines((Join-Path $global:_p "$($global:_n).log"),$global:_l.ToArray())};if($global:_e -and $global:_w){$isAdmin=$false;try{$id=[Security.Principal.WindowsIdentity]::GetCurrent();$isAdmin=([Security.Principal.WindowsPrincipal]::new($id)).IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator)}catch{};$la=$global:_l -join"`n";$h=$la -match ',ERROR,';$et=if($h){'Error'}elseif($la -match ',WARN,'){'Warning'}else{'Information'};$eid=if($h){$global:_i.Error}elseif($la -match ',WARN,'){$global:_i.Warn}else{$global:_i.Info};$ok=$false;try{Write-EventLog -LogName Application -Source $global:_s -EventId $eid -EntryType $et -Message $la -EA Stop;$ok=$true}catch{};if(-not $ok -and $isAdmin){try{[Diagnostics.EventLog]::CreateEventSource($global:_s,'Application')}catch{};try{Write-EventLog -LogName Application -Source $global:_s -EventId $eid -EntryType $et -Message $la}catch{}}}}catch{}}}
+        if(!(Test-Path function:\global:_Clean)){function global:_Clean{$WhatIfPreference=$false;Remove-Item -Path function:\Write-Host,function:\Write-Output,function:\Write-Warning,function:\Write-Error,function:\Write-Verbose,function:\_Save,function:\_Clean,function:\_ID,function:\_Time -ea 0 -Force;Remove-Variable -Name _l,_g,_s,_n,_p,_d,_e,_i,_r,_w,_az -Scope Global -ea 0}}
         # Register exit handler FIRST (before Write-* overrides)
-        $null = Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Action { if ($global:_l) { try { _Save }catch {} }; if (Test-Path function:\_Clean) { _Clean } } -MaxTriggerCount 1
+        $null=Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Action{if($global:_l){try{_Save}catch{}};if(Test-Path function:\_Clean){_Clean}} -MaxTriggerCount 1
         # Create Write-* proxy functions (skip in Azure Automation)
-        function Script:Write-Host { $m = "$args"; $c = (Get-PSCallStack)[1]; $r = "Row$($c.ScriptLineNumber)"; $e = "$(_Time),INFO,$r,$(_ID),$m"; $global:_l.Add($e); if ($global:_g) { if ($global:_az) { Microsoft.PowerShell.Utility\Write-Output $m }else { Microsoft.PowerShell.Utility\Write-Host $e -ForegroundColor Green } } }
-        function Script:Write-Output { $m = "$args"; $c = (Get-PSCallStack)[1]; $r = "Row$($c.ScriptLineNumber)"; $e = "$(_Time),OUTPUT,$r,$(_ID),$m"; $global:_l.Add($e); if ($global:_g) { if ($global:_az) { Microsoft.PowerShell.Utility\Write-Output $m }else { Microsoft.PowerShell.Utility\Write-Host $e -ForegroundColor Green } } }
-        function Script:Write-Verbose { $m = "$args"; $c = (Get-PSCallStack)[1]; $r = "Row$($c.ScriptLineNumber)"; $e = "$(_Time),VERBOSE,$r,$(_ID),$m"; $global:_l.Add($e); if ($global:_g -and $VerbosePreference -ne 'SilentlyContinue') { if ($global:_az) { Microsoft.PowerShell.Utility\Write-Verbose $m }else { Microsoft.PowerShell.Utility\Write-Host $e -ForegroundColor cyan } } }
-        function Script:Write-Warning { $m = "$args"; $c = (Get-PSCallStack)[1]; $r = "Row$($c.ScriptLineNumber)"; $e = "$(_Time),WARN,$r,$(_ID),$m"; $global:_l.Add($e); if ($global:_g) { if ($global:_az) { Microsoft.PowerShell.Utility\Write-Warning $m }else { Microsoft.PowerShell.Utility\Write-Host $e -ForegroundColor Yellow } }; if ($WarningPreference -eq 'Stop') { _Save; _Clean; exit } }
-        function Script:Write-Error { $m = "$args"; $c = (Get-PSCallStack)[1]; $r = "Row$($c.ScriptLineNumber)"; $e = "$(_Time),ERROR,$r,$(_ID),$m"; $global:_l.Add($e); if ($global:_g) { if ($global:_az) { Microsoft.PowerShell.Utility\Write-Error $m }else { Microsoft.PowerShell.Utility\Write-Host $e -ForegroundColor Red } }; if ($ErrorActionPreference -eq 'Stop') { _Save; _Clean; exit } }
+        function Script:Write-Host{$m="$args";$c=(Get-PSCallStack)[1];$r="Row$($c.ScriptLineNumber)";$e="$(_Time),INFO,$r,$(_ID),$m";$global:_l.Add($e);if($global:_g){if($global:_az){Microsoft.PowerShell.Utility\Write-Output $m}else{Microsoft.PowerShell.Utility\Write-Host $e -ForegroundColor Green}}}
+        function Script:Write-Output{$m="$args";$c=(Get-PSCallStack)[1];$r="Row$($c.ScriptLineNumber)";$e="$(_Time),OUTPUT,$r,$(_ID),$m";$global:_l.Add($e);if($global:_g){if($global:_az){Microsoft.PowerShell.Utility\Write-Output $m}else{Microsoft.PowerShell.Utility\Write-Host $e -ForegroundColor Green}}}
+        function Script:Write-Verbose{$m="$args";$c=(Get-PSCallStack)[1];$r="Row$($c.ScriptLineNumber)";$e="$(_Time),VERBOSE,$r,$(_ID),$m";$global:_l.Add($e);if($global:_g -and $VerbosePreference -ne 'SilentlyContinue'){if($global:_az){Microsoft.PowerShell.Utility\Write-Verbose $m}else{Microsoft.PowerShell.Utility\Write-Host $e -ForegroundColor cyan}}}
+        function Script:Write-Warning{$m="$args";$c=(Get-PSCallStack)[1];$r="Row$($c.ScriptLineNumber)";$e="$(_Time),WARN,$r,$(_ID),$m";$global:_l.Add($e);if($global:_g){if($global:_az){Microsoft.PowerShell.Utility\Write-Warning $m}else{Microsoft.PowerShell.Utility\Write-Host $e -ForegroundColor Yellow}};if($WarningPreference -eq 'Stop'){_Save;_Clean;exit}}
+        function Script:Write-Error{$m="$args";$c=(Get-PSCallStack)[1];$r="Row$($c.ScriptLineNumber)";$e="$(_Time),ERROR,$r,$(_ID),$m";$global:_l.Add($e);if($global:_g){if($global:_az){Microsoft.PowerShell.Utility\Write-Error $m}else{Microsoft.PowerShell.Utility\Write-Host $e -ForegroundColor Red}};if($ErrorActionPreference -eq 'Stop'){_Save;_Clean;exit}}
     }
 }
 function Invoke-MgGraphRequestSingle {
-    <#
+<#
 .SYNOPSIS
     Makes a single Graph API call with Invoke-MgGraphRequest and support for filtering, property selection, and count queries.
 .DESCRIPTION
     Makes Graph API calls using Invoke-MgGraphRequest but add automatic pagination, throttling handling, and exponential backoff retry logic.
     Supports filtering, property selection, and count queries. Returns all pages of results automatically.
+    Handles skip token expiration by restarting query with smaller page size and deduplication.
 .NOTES
     Author:  @MrTbone_se (T-bone Granheden)
-    Version: 2.1
+    Version: 2.2
     
     Version History:
     1.0 - Initial version
     2.0 - Fixed some small bugs with throttling handling
     2.1 - Added more error handling for Post/Patch methods
+    2.2 - Added skip token expiration recovery with automatic restart and deduplication
 #>
-    [CmdletBinding()]
+[CmdletBinding()]
     Param(
         [Parameter(                 HelpMessage = "The Graph API version ('beta' or 'v1.0')")]
         [ValidateSet('beta', 'v1.0')]
-        [string]$GraphRunProfile = "v1.0",
+        [string]$GraphRunProfile     = "v1.0",
     
         [Parameter(                 HelpMessage = "The HTTP method for the request(e.g., 'GET', 'PATCH', 'POST', 'DELETE')")]
         [ValidateSet('GET', 'PATCH', 'POST', 'DELETE')]
-        [String]$GraphMethod = "GET",
+        [String]$GraphMethod         = "GET",
         
-        [Parameter(Mandatory = $true, HelpMessage = "The Graph API endpoint path to target (e.g., 'me', 'users', 'groups')")]
+        [Parameter(Mandatory=$true, HelpMessage = "The Graph API endpoint path to target (e.g., 'me', 'users', 'groups')")]
         [ValidateNotNullOrEmpty()]
         [string]$GraphObject,
 
@@ -608,23 +675,23 @@ function Invoke-MgGraphRequestSingle {
         [Parameter(                 HelpMessage = "Graph API filters to apply")]
         [string]$GraphFilters,
     
-        [Parameter(                 HelpMessage = "Page size (Default is the maximum 1000 objects per page)")]
-        [ValidateRange(1, 1000)]
-        [int]$GraphPageSize = 999,
+        [Parameter(                 HelpMessage = "Page size (Default is 500 for better stability)")]
+        [ValidateRange(1,1000)]
+        [int]$GraphPageSize          = 500,
 
         [Parameter(                 HelpMessage = "Skip pagination and only get the first page. (Default is false)")]
-        [bool]$GraphSkipPagination = $false,
+        [bool]$GraphSkipPagination   = $false,
 
         [Parameter(                 HelpMessage = "Include count of total items. Adds ConsistencyLevel header. (Default is false)")]
-        [bool]$GraphCount = $false,
+        [bool]$GraphCount            = $false,
 
         [Parameter(                 HelpMessage = "Delay in milliseconds between requests if throttled")]
-        [ValidateRange(100, 5000)]
-        [int]$GraphWaitTime = 1000,
+        [ValidateRange(100,5000)]
+        [int]$GraphWaitTime         = 1000,
 
         [Parameter(                 HelpMessage = "Maximum retry attempts for failed requests when throttled")]
-        [ValidateRange(1, 10)]
-        [int]$GraphMaxRetry = 3
+        [ValidateRange(1,10)]
+        [int]$GraphMaxRetry         = 3
     )
 
     Begin {
@@ -634,12 +701,16 @@ function Invoke-MgGraphRequestSingle {
         [int]$RetryCount = 0
         [string]$Uri = "https://graph.microsoft.com/$GraphRunProfile/$GraphObject"
         [System.Collections.ArrayList]$GraphQueryParams = [System.Collections.ArrayList]::new()
+        
+        # Skip token recovery variables (only used if needed)
+        [string]$BaseUri = $Uri
+        [System.Collections.Generic.HashSet[string]]$SeenIds = $null
 
         # Add Count parameter to Query if requested
-        if ($GraphCount) { [void]$GraphQueryParams.Add("`$count=true") }
+        if ($GraphCount) {[void]$GraphQueryParams.Add("`$count=true")}
 
         # Add page size parameter to Query if specified
-        if ($GraphMethod -eq 'GET') { [void]$GraphQueryParams.Add("`$top=$GraphPageSize") }
+        if ($GraphMethod -eq 'GET') {[void]$GraphQueryParams.Add("`$top=$GraphPageSize")}
 
         # Add properties to Query if specified
         if ($GraphProperties) {
@@ -653,7 +724,7 @@ function Invoke-MgGraphRequestSingle {
         }
 
         # Combine query parameters into URI
-        if ($GraphQueryParams.Count -gt 0) { $Uri += "?" + ($GraphQueryParams -join '&') }
+        if ($GraphQueryParams.Count -gt 0) {$Uri += "?" + ($GraphQueryParams -join '&')}
     }
 
     Process {
@@ -692,17 +763,43 @@ function Invoke-MgGraphRequestSingle {
                     catch {
                         # Check if this is an expired skip token error
                         if ($_.Exception.Message -match "Skip token.*expired|Skip token is null") {
-                            Write-Warning "Skip token has expired on page $I after collecting $($PsobjectResults.Count) items. Returning collected data."
-                            # Exit pagination loop and return what we have
-                            $Uri = $null
+                            Write-Warning "Skip token expired at page $I after $($PsobjectResults.Count) items. Restarting..."
+                            
+                            # Initialize deduplication on first skip token failure
+                            if ($null -eq $SeenIds) {
+                                $SeenIds = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+                                $PsobjectResults | Where-Object {$_.id} | ForEach-Object {[void]$SeenIds.Add($_.id)}
+                            }
+                            
+                            # Reduce page size and rebuild URI
+                            $GraphPageSize = [Math]::Max([int]($GraphPageSize / 2), 100)
+                            $GraphQueryParams.Clear()
+                            if ($GraphCount) {[void]$GraphQueryParams.Add("`$count=true")}
+                            if ($GraphMethod -eq 'GET') {[void]$GraphQueryParams.Add("`$top=$GraphPageSize")}
+                            if ($GraphProperties) {[void]$GraphQueryParams.Add("`$select=$($GraphProperties -join ',')")}
+                            if ($GraphFilters) {[void]$GraphQueryParams.Add("`$filter=$([System.Web.HttpUtility]::UrlEncode($GraphFilters))")}
+                            $Uri = $BaseUri + "?" + ($GraphQueryParams -join '&')
                             break
                         }
-                        # For other errors, log and re-throw to outer catch
                         Write-Verbose "Request failed with error: $($_.Exception.Message)"
                         throw
                     }
-                    if ($GraphMethod -in 'POST', 'PATCH', 'DELETE') { return $Response }
-                    if ($Response.value) { [void]$PsobjectResults.AddRange($Response.value) }
+                    if ($GraphMethod -in 'POST', 'PATCH', 'DELETE') {return $Response}
+                    
+                    # Add items (with deduplication if skip token recovery active)
+                    if ($Response.value) {
+                        if ($SeenIds) {
+                            foreach ($item in $Response.value) {
+                                if ($item.id -and -not $SeenIds.Contains($item.id)) {
+                                    [void]$PsobjectResults.Add($item)
+                                    [void]$SeenIds.Add($item.id)
+                                }
+                            }
+                        } else {
+                            [void]$PsobjectResults.AddRange($Response.value)
+                        }
+                    }
+                    
                     # Capture count from first response if requested
                     if ($GraphCount -and $null -eq $TotalCount -and $Response.'@odata.count') {
                         $TotalCount = $Response.'@odata.count'
@@ -762,22 +859,19 @@ function Invoke-MgGraphRequestSingle {
 
                     # Use switch to handle specific status codes (handle both enum names and numeric values)
                     switch ($StatusCode) {
-                        { $_ -eq 429 -or $_ -eq 'TooManyRequests' } {
-                            # Throttling
+                        {$_ -eq 429 -or $_ -eq 'TooManyRequests'} { # Throttling
                             $RetryAfter = $_.Exception.Response.Headers["Retry-After"]
                             if ($RetryAfter) {
                                 Write-Warning "Throttling detected (429). Waiting $($RetryAfter * 1000) milliseconds before retrying."
                                 Start-Sleep -Milliseconds ($RetryAfter * 1000)
-                            }
-                            else {
+                            } else {
                                 [int]$Delay = [math]::Min(($GraphWaitTime * ([math]::Pow(2, $RetryCount))), 60000)
                                 Write-Warning "Throttling detected (429). No Retry-After header found. Waiting $Delay milliseconds before retrying."
                                 Start-Sleep -Milliseconds $Delay
                             }
                             # Break not needed, will fall through to retry logic below
                         }
-                        { $_ -eq 404 -or $_ -eq 'NotFound' } {
-                            # Not Found
+                        {$_ -eq 404 -or $_ -eq 'NotFound'} { # Not Found
                             # For DELETE operations, 404 means already deleted - treat as success
                             if ($GraphMethod -eq 'DELETE') {
                                 Write-Verbose "Resource not found (404) - treating as already deleted"
@@ -786,17 +880,15 @@ function Invoke-MgGraphRequestSingle {
                             Write-Warning "Resource not found (404). Error: $ErrorMessage"
                             throw "$ErrorMessage (Object Deleted/No User License)"
                         }
-                        { $_ -eq 400 -or $_ -eq 'BadRequest' } {
-                            # Bad Request                            
+                        {$_ -eq 400 -or $_ -eq 'BadRequest'} { # Bad Request                            
                             if ($ErrorMessage -match "Skip token.*expired|Skip token is null" -or $FullErrorString -match "Skip token.*expired|Skip token is null") {
-                                # Check if this is an expired skip token error
-                                Write-Warning "Skip token has expired after collecting $($PsobjectResults.Count) items. Returning collected data."
+                                # Fallback - should normally be handled in inner try-catch
+                                Write-Warning "Skip token expired (outer catch fallback). Returning $($PsobjectResults.Count) items."
                                 return $PsobjectResults
                             }
-                            if ($ErrorMessage -match "does not have intune license or is deleted" -or $FullErrorString -match "does not have intune license or is deleted") {
-                                # Check if no license, common for Intune queries
+                            if ($ErrorMessage -match "does not have intune license or is deleted" -or $FullErrorString -match "does not have intune license or is deleted") { # Check if no license, common for Intune queries
                                 Write-Warning "Object Deleted or User has no Intune license"
-                                return "$ErrorMessage (Object Deleted/No User License)"
+                                throw "$ErrorMessage (Object Deleted/No User License)"
                             }
                             # For DELETE operations, "not found" patterns mean already removed - treat as success
                             if ($GraphMethod -eq 'DELETE' -and ($ErrorMessage -imatch 'does not exist|not found|cannot be found|no longer exists|was not found|resource .+ not found' -or $FullErrorString -imatch 'does not exist|not found|cannot be found|no longer exists')) {
@@ -811,21 +903,18 @@ function Invoke-MgGraphRequestSingle {
                             Write-Error "Bad request (400). Error: $ErrorMessage"
                             throw $_
                         }
-                        { $_ -eq 403 -or $_ -eq 'Forbidden' } {
-                            # Forbidden / Access Denied
-                            Write-Error "Access denied (403). Error: $ErrorMessage"
-                            throw $_
+                        {$_ -eq 403 -or $_ -eq 'Forbidden'} { # Forbidden / Access Denied
+                             Write-Error "Access denied (403). Error: $ErrorMessage"
+                             throw $_
                         }
-                        default {
-                            # Other HTTP errors - Use generic retry
+                        default { # Other HTTP errors - Use generic retry
                             [int]$Delay = [math]::Min(($GraphWaitTime * ([math]::Pow(2, $RetryCount))), 60000)
                             Write-Warning "HTTP error $StatusCode. Waiting $Delay milliseconds before retrying."
                             Start-Sleep -Milliseconds $Delay
                             # Break not needed, will fall through to retry logic below
                         }
                     }
-                }
-                else {
+                } else {
                     # Non-HTTP errors (e.g., network issues, DNS resolution) - Use generic retry
                     [int]$Delay = [math]::Min(($GraphWaitTime * ([math]::Pow(2, $RetryCount))), 60000)
                     Write-Warning "Non-HTTP error. Waiting $Delay milliseconds before retrying. Error: $ErrorMessage"
@@ -835,8 +924,8 @@ function Invoke-MgGraphRequestSingle {
                 # Increment retry count and check if max retries exceeded ONLY if not already thrown
                 $RetryCount++
                 if ($RetryCount -gt $GraphMaxRetry) {
-                    Write-Error "Request failed after $($GraphMaxRetry) retries. Aborting."
-                    throw "Request failed after $($GraphMaxRetry) retries. Last error: $ErrorMessage"
+                     Write-Error "Request failed after $($GraphMaxRetry) retries. Aborting."
+                     throw "Request failed after $($GraphMaxRetry) retries. Last error: $ErrorMessage"
                 }
                 # If retries not exceeded and error was potentially retryable (e.g., 429, other HTTP, non-HTTP), the loop will continue
             }
@@ -853,7 +942,7 @@ function Invoke-MgGraphRequestSingle {
     }
 }
 function Invoke-MgGraphRequestBatch {
-    <#
+<#
 .SYNOPSIS
     Processes multiple Graph API requests in batches for improved performance.
 .DESCRIPTION
@@ -906,15 +995,15 @@ function Invoke-MgGraphRequestBatch {
         [string]$GraphFilters,
     
         [Parameter(HelpMessage = "Batch size (max 20 objects per batch)")]
-        [ValidateRange(1, 20)]
+        [ValidateRange(1,20)]
         [int]$GraphBatchSize = 20,
     
         [Parameter(HelpMessage = "Delay between batches in milliseconds")]
-        [ValidateRange(100, 5000)]
+        [ValidateRange(100,5000)]
         [int]$GraphWaitTime = 1000,
     
         [Parameter(HelpMessage = "Maximum retry attempts for failed requests")]
-        [ValidateRange(1, 10)]
+        [ValidateRange(1,10)]
         [int]$GraphMaxRetry = 3
     )
     
@@ -935,7 +1024,7 @@ function Invoke-MgGraphRequestBatch {
         
         # Pre-calculate common values to avoid repeated work
         [string]$BatchUri = "https://graph.microsoft.com/$GraphRunProfile/`$batch"
-        [hashtable]$BatchHeaders = @{'Content-Type' = 'application/json' }
+        [hashtable]$BatchHeaders = @{'Content-Type' = 'application/json'}
         
         # Build URL query parameters once (they're the same for all requests)
         [string]$UrlQueryString = $null
@@ -951,7 +1040,7 @@ function Invoke-MgGraphRequestBatch {
         }
         
         # Pre-determine if method needs body/headers (avoid repeated checks)
-        [bool]$NeedsBody = $GraphMethod -in 'PATCH', 'POST'
+        [bool]$NeedsBody = $GraphMethod -in 'PATCH','POST'
         [string]$ContentTypeHeader = if ($NeedsBody) { 'application/json' } else { $null }
         
         Write-Verbose "Graph batch processing initialized for $TotalObjects objects"
@@ -964,7 +1053,7 @@ function Invoke-MgGraphRequestBatch {
                 $RetryObjects.Clear()
                 
                 # Process objects in batches
-                for ($i = 0; $i -lt $GraphObjects.Count; $i += $GraphBatchSize) {
+                for($i = 0; $i -lt $GraphObjects.Count; $i += $GraphBatchSize) {
                     # Calculate batch boundaries
                     [int]$BatchEnd = [Math]::Min($i + $GraphBatchSize, $GraphObjects.Count)
                     [int]$BatchCount = $BatchEnd - $i
@@ -981,28 +1070,26 @@ function Invoke-MgGraphRequestBatch {
                         # Use object's body if available, otherwise use the global Body parameter
                         [object]$RequestBody = if ($Obj.PSObject.Properties.Name -contains 'body' -and $Obj.body) {
                             $Obj.body
-                        }
-                        elseif ($NeedsBody) {
+                        } elseif ($NeedsBody) {
                             $GraphBody
-                        }
-                        else {
+                        } else {
                             $null
                         }
                         
                         [void]$Req.Add(@{
-                                'id'      = $Obj.id
-                                'method'  = $GraphMethod
-                                'url'     = $Url
-                                'body'    = $RequestBody
-                                'headers' = @{ 'Content-Type' = $ContentTypeHeader }
-                            })
+                            'id' = $Obj.id
+                            'method' = $GraphMethod
+                            'url' = $Url
+                            'body' = $RequestBody
+                            'headers' = @{ 'Content-Type' = $ContentTypeHeader }
+                        })
                     }
                     
                     Write-Verbose "Sending batch $([Math]::Floor($i/$GraphBatchSize) + 1): items $($i+1) to $BatchEnd of $($GraphObjects.Count)"
                     
                     # Send batch request
                     try {
-                        [string]$BatchBody = @{'requests' = $Req } | ConvertTo-Json -Depth 10 -Compress
+                        [string]$BatchBody = @{'requests' = $Req} | ConvertTo-Json -Depth 10 -Compress
                         [object]$Responses = Invoke-MgGraphRequest -Method POST -Uri $BatchUri -Body $BatchBody -Headers $BatchHeaders -Verbose:$false
                         Write-Verbose "Batch request successful with $($Req.Count) requests"
                     }
@@ -1018,32 +1105,28 @@ function Invoke-MgGraphRequestBatch {
                         
                         # Handle response by status code
                         switch ($Response.status) {
-                            { $_ -in 200, 201, 204 } {
-                                # Success cases
+                            {$_ -in 200,201,204} { # Success cases
                                 # Extract the actual device object from response.body
                                 if ($Response.body) {
                                     # Convert hashtable to PSCustomObject if needed
                                     [object]$GraphBodyObject = if ($Response.body -is [hashtable]) {
                                         [PSCustomObject]$Response.body
-                                    }
-                                    else {
+                                    } else {
                                         $Response.body
                                     }
                                     [void]$CollectedObjects.Add($GraphBodyObject)
                                     Write-Verbose "Success ($($Response.status)) for request $($Response.id) with body"
-                                }
-                                else {
+                                } else {
                                     # For 204 No Content (PATCH/DELETE), return a success indicator with the request ID
                                     [PSCustomObject]$SuccessObject = [PSCustomObject]@{
-                                        id     = $Response.id
+                                        id = $Response.id
                                         status = $Response.status
                                     }
                                     [void]$CollectedObjects.Add($SuccessObject)
                                     Write-Verbose "Success ($($Response.status)) for request $($Response.id) - no body returned"
                                 }
                             }
-                            400 {
-                                # Bad request - check error details for expected failures
+                            400 { # Bad request - check error details for expected failures
                                 # Extract error message from response body
                                 [string]$ErrorCode = $null
                                 [string]$ErrorMsg = $null
@@ -1056,9 +1139,9 @@ function Invoke-MgGraphRequestBatch {
                                 if ($GraphMethod -eq 'DELETE' -and ($ErrorMsg -imatch 'does not exist|not found|cannot be found|no longer exists|was not found|resource .+ not found')) {
                                     Write-Verbose "Object $($Response.id) already removed or not found (400: $ErrorCode)"
                                     [PSCustomObject]$SuccessObject = [PSCustomObject]@{
-                                        id     = $Response.id
+                                        id = $Response.id
                                         status = 204  # Treat as successful removal
-                                        note   = 'Already removed'
+                                        note = 'Already removed'
                                     }
                                     [void]$CollectedObjects.Add($SuccessObject)
                                 }
@@ -1066,9 +1149,9 @@ function Invoke-MgGraphRequestBatch {
                                 elseif ($GraphMethod -eq 'POST' -and ($ErrorMsg -imatch 'already exist|duplicate|conflict|references already exist|object reference already exist')) {
                                     Write-Verbose "Object $($Response.id) already exists (400: $ErrorCode)"
                                     [PSCustomObject]$SuccessObject = [PSCustomObject]@{
-                                        id     = $Response.id
+                                        id = $Response.id
                                         status = 200  # Treat as successful (already exists)
-                                        note   = 'Already exists'
+                                        note = 'Already exists'
                                     }
                                     [void]$CollectedObjects.Add($SuccessObject)
                                 }
@@ -1078,33 +1161,28 @@ function Invoke-MgGraphRequestBatch {
                                     [void]$RetryObjects.Add($Response)
                                 }
                             }
-                            403 {
-                                # Access denied - don't retry
+                            403 { # Access denied - don't retry
                                 Write-Error "Access denied (403) for object $($Response.id) - Check permissions"
                             }
-                            404 {
-                                # Not found - for DELETE treat as success, for others log warning
+                            404 { # Not found - for DELETE treat as success, for others log warning
                                 if ($GraphMethod -eq 'DELETE') {
                                     Write-Verbose "Object $($Response.id) not found (404) - treating as already removed"
                                     [PSCustomObject]$SuccessObject = [PSCustomObject]@{
-                                        id     = $Response.id
+                                        id = $Response.id
                                         status = 204
-                                        note   = 'Not found - already removed'
+                                        note = 'Not found - already removed'
                                     }
                                     [void]$CollectedObjects.Add($SuccessObject)
-                                }
-                                else {
+                                } else {
                                     Write-Warning "Resource not found (404) for object $($Response.id)"
                                 }
                             }
-                            429 {
-                                # Throttling - retry with backoff
+                            429 { # Throttling - retry with backoff
                                 Write-Warning "Throttling (429) for object $($Response.id)"
                                 [void]$RetryObjects.Add($Response)
                                 $ThrottledCount++
                             }
-                            default {
-                                # Other errors - retry
+                            default { # Other errors - retry
                                 Write-Error "Unexpected status ($($Response.status)) for object $($Response.id)"
                                 [void]$RetryObjects.Add($Response)
                             }
@@ -1117,8 +1195,7 @@ function Invoke-MgGraphRequestBatch {
                         [timespan]$Elapsed = (Get-Date) - $StartTime
                         [timespan]$TimeLeft = if ($CurrentObject -gt 0) {
                             [TimeSpan]::FromMilliseconds(($Elapsed.TotalMilliseconds / $CurrentObject) * ($TotalObjects - $CurrentObject))
-                        }
-                        else { [TimeSpan]::Zero }
+                        } else { [TimeSpan]::Zero }
                         
                         Write-Progress -Activity "Processing Graph Batch Requests" `
                             -Status "Progress: $CurrentObject/$TotalObjects | Estimated Time Left: $($TimeLeft.ToString('hh\:mm\:ss')) | Throttled: $ThrottledCount | Retry: $RetryCount/$GraphMaxRetry" `
@@ -1135,8 +1212,7 @@ function Invoke-MgGraphRequestBatch {
                         
                         [int]$WaitSeconds = if ($RetryAfterValues -and $RetryAfterValues.Count -gt 0) {
                             [Math]::Min(($RetryAfterValues | Measure-Object -Maximum).Maximum + ($RetryCount * 2), 30)
-                        }
-                        else {
+                        } else {
                             [Math]::Min(1 + ($RetryCount * 2), 30)
                         }
                         
@@ -1182,7 +1258,7 @@ function Invoke-MgGraphRequestBatch {
     }
 }
 function Convert-PSObjectArrayToHashTables {
-    <#
+<#
 .SYNOPSIS
     Converts PSObject arrays to optimized hashtables for fast O(1) lookups.
 .DESCRIPTION
@@ -1199,10 +1275,10 @@ function Convert-PSObjectArrayToHashTables {
 #>
     [CmdletBinding()]
     param (
-        [Parameter(Mandatory = $true, HelpMessage = "Array of PSObjects to convert to hashtables")]
+        [Parameter(Mandatory = $true,  HelpMessage = "Array of PSObjects to convert to hashtables")]
         [PSObject[]]$PSObjectArray,
 
-        [Parameter(Mandatory = $true, HelpMessage = "Property names to use as keys for hashtables")]
+        [Parameter(Mandatory = $true,  HelpMessage = "Property names to use as keys for hashtables")]
         [string[]]$IdProperties
     )
 
@@ -1234,7 +1310,7 @@ function Convert-PSObjectArrayToHashTables {
             if ($IdProperties.Count -eq 1) {
                 try {
                     [string]$IdProperty = $IdProperties[0]
-                    [System.Collections.Generic.Dictionary[string, object]]$HashTable = [System.Collections.Generic.Dictionary[string, object]]::new($capacity, [System.StringComparer]::OrdinalIgnoreCase)
+                    [System.Collections.Generic.Dictionary[string,object]]$HashTable = [System.Collections.Generic.Dictionary[string,object]]::new($capacity, [System.StringComparer]::OrdinalIgnoreCase)
 
                     foreach ($PSObject in $PSObjectArray) {
                         try {
@@ -1268,7 +1344,7 @@ function Convert-PSObjectArrayToHashTables {
                 [hashtable]$HashTables = [hashtable]::new($IdProperties.Count)
                 foreach ($prop in $IdProperties) {
                     try {
-                        $HashTables[$prop] = [System.Collections.Generic.Dictionary[string, object]]::new($capacity, [System.StringComparer]::OrdinalIgnoreCase)
+                        $HashTables[$prop] = [System.Collections.Generic.Dictionary[string,object]]::new($capacity, [System.StringComparer]::OrdinalIgnoreCase)
                     }
                     catch {
                         Write-Error "Failed to create dictionary for property '$prop': $($_.Exception.Message)"
@@ -1318,7 +1394,7 @@ function Convert-PSObjectArrayToHashTables {
     }
 }
 function Invoke-ScriptReport {
-    <#
+<#
 .SYNOPSIS
     A reporting function with dynamic action tracking that generates a summary and detailed report.
 .DESCRIPTION
@@ -1339,31 +1415,32 @@ function Invoke-ScriptReport {
     1.0 - Initial version
     2.0 - Added dynamic reporting object with dynamic action counters
     2.1 - renamed parameter ActionName to ReportTitle for clarity
+    2.2 - Added %% to avoid formatting issues with percentage values
 #>
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory = $false, HelpMessage = "Description of the action performed by the script")]
-        [string]$ReportTitle = "Script Execution Report",
+        [Parameter(Mandatory = $false,                  HelpMessage = "Description of the action performed by the script")]
+        [string]$ReportTitle           = "Script Execution Report",
         
-        [Parameter(Mandatory = $true, HelpMessage = "Hashtable of ArrayLists grouped by Action containing report entries")]
+        [Parameter(Mandatory = $true,                   HelpMessage = "Hashtable of ArrayLists grouped by Action containing report entries")]
         [hashtable]$ReportResults,
         
-        [Parameter(Mandatory = $true, HelpMessage = "Start time of the report execution")]
+        [Parameter(Mandatory = $true,                   HelpMessage = "Start time of the report execution")]
         [datetime]$ReportStartTime,
 
-        [Parameter(Mandatory = $false, HelpMessage = "Include detailed per-object results in console output")]
-        [bool]$ReportDetailed = $false,
+        [Parameter(Mandatory = $false,                  HelpMessage = "Include detailed per-object results in console output")]
+        [bool]$ReportDetailed           = $false,
 
-        [Parameter(Mandatory = $false, HelpMessage = "Save report to disk in JSON/CSV format")]
-        [bool]$ReportToDisk = $false,
+        [Parameter(Mandatory = $false,                  HelpMessage = "Save report to disk in JSON/CSV format")]
+        [bool]$ReportToDisk             = $false,
 
-        [Parameter(Mandatory = $false, HelpMessage = "Directory path where report files will be saved")]
-        [ValidateScript({ Test-Path $_ -IsValid })]
-        [string]$ReportToDiskPath = "$env:TEMP\Reports",
+        [Parameter(Mandatory = $false,                  HelpMessage = "Directory path where report files will be saved")]
+        [ValidateScript({Test-Path $_ -IsValid})]
+        [string]$ReportToDiskPath       = "$env:TEMP\Reports",
         
-        [Parameter(Mandatory = $false, HelpMessage = "Format for report export (JSON or CSV)")]
+        [Parameter(Mandatory = $false,                  HelpMessage = "Format for report export (JSON or CSV)")]
         [ValidateSet('JSON', 'CSV')]
-        [string]$ReportFormat = 'CSV'
+        [string]$ReportFormat           = 'CSV'
     )
 
     Begin {
@@ -1398,11 +1475,11 @@ function Invoke-ScriptReport {
                 # Sort entries and output each line to avoid truncation
                 [array]$SortedEntries = @($AllEntries | Sort-Object -Property Action, Target)
                 [object]$TableOutput = $SortedEntries | Format-Table -Property `
-                @{Name = 'Target'; Expression = { $_.Target }; Alignment = 'Left' },
-                @{Name = 'OldValue'; Expression = { $_.OldValue }; Alignment = 'Left' },
-                @{Name = 'NewValue'; Expression = { $_.NewValue }; Alignment = 'Left' },
-                @{Name = 'Action'; Expression = { $_.Action }; Alignment = 'Left' },
-                @{Name = 'Details'; Expression = { $_.Details }; Alignment = 'Left' } -AutoSize -Wrap
+                    @{Name='Target';Expression={$_.Target};Alignment='Left'},
+                    @{Name='OldValue';Expression={$_.OldValue};Alignment='Left'},
+                    @{Name='NewValue';Expression={$_.NewValue};Alignment='Left'},
+                    @{Name='Action';Expression={$_.Action};Alignment='Left'},
+                    @{Name='Details';Expression={$_.Details};Alignment='Left'} -AutoSize -Wrap
                 # Use Out-String with -Stream to output each line separately (no truncation)
                 $TableOutput | Out-String -Stream -Width 250 | ForEach-Object { Write-Output $_ }
             }
@@ -1422,12 +1499,11 @@ function Invoke-ScriptReport {
                     foreach ($Action in $ActionSummary.Keys) {
                         [int]$Count = $ActionSummary[$Action]
                         [double]$Percentage = [math]::Round(($Count / $TotalObjects) * 100, 1)
-                        Write-Output ("    {0,-30}: {1,6} ({2,5}%)" -f $Action, $Count, $Percentage)
+                        Write-Output ("    {0,-30}: {1,6} ({2,5}%%)" -f $Action, $Count, $Percentage)
                     }
-                }
-                else {
+                } else {
                     foreach ($Action in $ActionSummary.Keys) {
-                        Write-Output ("    {0,-20}: {1,6} (  0.0%)" -f $Action, $ActionSummary[$Action])
+                        Write-Output ("    {0,-20}: {1,6} (  0.0%%)" -f $Action, $ActionSummary[$Action])
                     }
                 }
             }
@@ -1437,7 +1513,7 @@ function Invoke-ScriptReport {
             if ($ReportToDisk) {
                 # Ensure directory exists or create it
                 if (-not (Test-Path $ReportToDiskPath)) {
-                    try { New-Item -ItemType Directory -Path $ReportToDiskPath -Force -ErrorAction Stop | Out-Null }
+                    try {New-Item -ItemType Directory -Path $ReportToDiskPath -Force -ErrorAction Stop | Out-Null}
                     catch {
                         Write-Warning "Failed to create report directory '$ReportToDiskPath': $($_.Exception.Message)"
                         Write-Warning "Report will not be saved to disk."
@@ -1459,7 +1535,7 @@ function Invoke-ScriptReport {
                     
                     # Build report object
                     $ReportData = [PSCustomObject]@{
-                        ReportTitle     = $ReportTitle
+                        ReportTitle    = $ReportTitle
                         StartTime       = $ReportStartTime.ToString('yyyy-MM-dd HH:mm:ss')
                         EndTime         = $ReportEndTime.ToString('yyyy-MM-dd HH:mm:ss')
                         Duration        = $DurationFormatted
@@ -1526,9 +1602,9 @@ try {
     try {
         # Build authentication parameters to pass only non-empty values. If no values are provided, default interactive auth or managed identity auth will be used.
         [hashtable]$AuthParams = @{}
-        @{AuthTenantId = $AuthTenantId; AuthClientId = $AuthClientId; AuthCertThumbprint = $AuthCertThumbprint; AuthCertName = $AuthCertName; AuthCertPath = $AuthCertPath }.GetEnumerator() `
-        | Where-Object { -not [string]::IsNullOrWhiteSpace($_.Value) } `
-        | ForEach-Object { $AuthParams[$_.Key] = $_.Value }
+        @{AuthTenantId = $AuthTenantId; AuthClientId = $AuthClientId; AuthCertThumbprint = $AuthCertThumbprint; AuthCertName = $AuthCertName; AuthCertPath = $AuthCertPath}.GetEnumerator() `
+            | Where-Object { -not [string]::IsNullOrWhiteSpace($_.Value) } `
+            | ForEach-Object { $AuthParams[$_.Key] = $_.Value }
         # Add SecureString parameters that require different null checks
         if ($AuthClientSecret -and $AuthClientSecret.Length -gt 0) { $AuthParams['AuthClientSecret'] = $AuthClientSecret }
         if ($AuthCertPassword -and $AuthCertPassword.Length -gt 0) { $AuthParams['AuthCertPassword'] = $AuthCertPassword }
@@ -1553,23 +1629,21 @@ try {
             $GraphFilterString = "($($OsFilterParts -join ' or '))"
             Write-Verbose "Using OS filter: $GraphFilterString"
         }
-        else { Write-Verbose "No OS filter applied (retrieving all operating systems)" }
+        else {Write-Verbose "No OS filter applied (retrieving all operating systems)"}
         # Add filter for device last sync time
         if ($DeviceTimeSpan -gt 0) { 
             [string]$timeThreshold = (Get-Date).AddDays(-$DeviceTimeSpan).ToString('yyyy-MM-ddTHH:mm:ssZ')
-            if ($GraphFilterString) {
-                $GraphFilterString = "lastSyncDateTime ge $timeThreshold and " + $GraphFilterString
-            }
-            else { $GraphFilterString = "lastSyncDateTime ge $timeThreshold" }
+            if ($GraphFilterString) {$GraphFilterString = "lastSyncDateTime ge $timeThreshold and " + $GraphFilterString
+            } else {$GraphFilterString = "lastSyncDateTime ge $timeThreshold"}
             Write-Verbose "Using device last sync time filter: lastSyncDateTime ge $timeThreshold"
         }
-        else { Write-Verbose "No device last sync time filter applied" }
+        else {Write-Verbose "No device last sync time filter applied"}
         # Add filter for Intune managed devices or also include co-managed devices
         if ($IntuneOnly) {
-            if ($GraphFilterString) { $GraphFilterString = "managementAgent eq 'mdm' and " + $GraphFilterString }
-            else { $GraphFilterString = "managementAgent eq 'mdm' " }
+            if ($GraphFilterString) {$GraphFilterString = "managementAgent eq 'mdm' and " + $GraphFilterString}
+            else {$GraphFilterString = "managementAgent eq 'mdm' "}
         }
-        else { Write-Verbose "No management agent filter applied" }
+        else {Write-Verbose "No management agent filter applied"}
         # Get graph objects with single call
         $AllDevices = Invoke-MgGraphRequestSingle `
             -GraphRunProfile 'beta' `
@@ -1580,7 +1654,7 @@ try {
             -GraphMaxRetry $GraphMaxRetry `
             -GraphWaitTime $GraphWaitTime
         # Initialize hashtables
-        $AllDevicesByIdHash = [System.Collections.Generic.Dictionary[string, object]]::new(0, [System.StringComparer]::OrdinalIgnoreCase)
+        $AllDevicesByIdHash = [System.Collections.Generic.Dictionary[string,object]]::new(0, [System.StringComparer]::OrdinalIgnoreCase)
         # Verify if objects were found   
         if ($AllDevices -and $AllDevices.Count -gt 0) {
             Write-Verbose "Retrieved $($AllDevices.Count) devices from Graph API"
@@ -1589,12 +1663,10 @@ try {
             if (($IncludedDeviceNames -and $IncludedDeviceNames.Count -gt 0) -or ($ExcludedDeviceNames -and $ExcludedDeviceNames.Count -gt 0)) {
                 [string]$IncludePattern = if ($IncludedDeviceNames -and $IncludedDeviceNames.Count -gt 0) {
                     '^(' + (($IncludedDeviceNames | ForEach-Object { [regex]::Escape($_) }) -join '|') + ')'
-                }
-                else { $null }
+                } else { $null }
                 [string]$ExcludePattern = if ($ExcludedDeviceNames -and $ExcludedDeviceNames.Count -gt 0) {
                     '^(' + (($ExcludedDeviceNames | ForEach-Object { [regex]::Escape($_) }) -join '|') + ')'
-                }
-                else { $null }
+                } else { $null }
                 $AllDevices = $AllDevices | Where-Object {
                     $IncludeMatch = if ($IncludePattern) { $_.deviceName -imatch $IncludePattern } else { $true }
                     $ExcludeMatch = if ($ExcludePattern) { $_.deviceName -notmatch $ExcludePattern } else { $true }
@@ -1604,11 +1676,29 @@ try {
                 if ($ExcludePattern) { Write-Verbose "Applied exclusion filter for $($ExcludedDeviceNames.Count) patterns" }
                 Write-Verbose "Remaining after filters: $($AllDevices.Count) devices"
             }
+            if ($IncludedGroupRegex -and $IncludedGroupRegex.Count -gt 0) {
+                Write-Verbose "Processing INCLUSION filtering by Regex groups..."
+                $IncludedDeviceIds = Get-MgDeviceIdsFromGroupRegex -GroupRegexes $IncludedGroupRegex
+                
+                [int]$PreFilterCount = @($AllDevices).Count
+                $AllDevices = $AllDevices | Where-Object { $IncludedDeviceIds.Contains($_.azureADDeviceId) }
+
+                Write-Verbose "Devices retained after applying group INCLUSION: $($AllDevices.Count)/${PreFilterCount}"
+            }
+
+            if ($ExcludedGroupRegex -and $ExcludedGroupRegex.Count -gt 0) {
+                Write-Verbose "Processing EXCLUSION filtering by Regex groups..."
+                $ExcludedDeviceIds = Get-MgDeviceIdsFromGroupRegex -GroupRegexes $ExcludedGroupRegex
+                
+                [int]$PreFilterCount = @($AllDevices).Count
+                $AllDevices = $AllDevices | Where-Object { -not $ExcludedDeviceIds.Contains($_.AzureAdDeviceId) }
+                Write-Verbose "Devices retained after applying group EXCLUSION:  $($AllDevices.Count)/${PreFilterCount}"
+            }
             # Create hashtable for fast lookups
             $AllDevicesByIdHash = Convert-PSObjectArrayToHashTables -PSObjectArray $AllDevices -IdProperties @('id')
             Write-Verbose "Created device lookup hashtable with $($AllDevicesByIdHash.Count) entries"
         }
-        else { Write-Warning "No devices found in tenant" }
+        else {Write-Warning "No devices found in tenant"}
     }
     catch {
         Write-Error "Failed to get devices: $($_.Exception.Message)"
@@ -1632,8 +1722,8 @@ try {
             -GraphWaitTime $GraphWaitTime
 
         # Initialize hashtables
-        $AllUsersByIdHash = [System.Collections.Generic.Dictionary[string, object]]::new(0, [System.StringComparer]::OrdinalIgnoreCase)
-        $AllUsersByUPNHash = [System.Collections.Generic.Dictionary[string, object]]::new(0, [System.StringComparer]::OrdinalIgnoreCase)
+        $AllUsersByIdHash = [System.Collections.Generic.Dictionary[string,object]]::new(0, [System.StringComparer]::OrdinalIgnoreCase)
+        $AllUsersByUPNHash = [System.Collections.Generic.Dictionary[string,object]]::new(0, [System.StringComparer]::OrdinalIgnoreCase)
         # Verify if objects were found
         if ($AllUsers -and $AllUsers.Count -gt 0) {
             Write-Verbose "Successfully retrieved $($AllUsers.Count) users from Graph API"
@@ -1643,7 +1733,7 @@ try {
             $AllUsersByUPNHash = $AllUserHashTables['userPrincipalName']
             Write-Verbose "Created user lookup hashtables: ID=$($AllUsersByIdHash.Count) entries, UPN=$($AllUsersByUPNHash.Count) entries"
         }
-        else { Write-Warning "No users found in tenant" }
+        else {Write-Warning "No users found in tenant"}
     }
     catch {
         Write-Error "Failed to get users: $($_.Exception.Message)"
@@ -1658,10 +1748,10 @@ try {
         [string]$GraphFilterString = "status/errorCode eq 0 and deviceDetail/isManaged eq true"
         # Add filter for OS specific queries
         [hashtable]$OsQueryConfigs = @{
-            'Android'          = @{ AppId = $AppId_Android; EventType = "signInEventTypes/any(t: t eq 'nonInteractiveUser')"; OSFilter = "startsWith(deviceDetail/operatingSystem,'Android')" }
-            'iOS'              = @{ AppId = $AppId_iOS; EventType = "signInEventTypes/any(t: t eq 'nonInteractiveUser')"; OSFilter = "startsWith(deviceDetail/operatingSystem,'iOS')" }
-            'macOS'            = @{ AppId = $AppId_macOS; EventType = "signInEventTypes/any(t: t eq 'nonInteractiveUser')"; OSFilter = "startsWith(deviceDetail/operatingSystem,'MacOs')" }
-            'Windows'          = @{ AppId = $AppId_Windows; EventType = "isInteractive eq true"; OSFilter = "startsWith(deviceDetail/operatingSystem,'Windows')" }
+            'Android' = @{ AppId = $AppId_Android; EventType = "signInEventTypes/any(t: t eq 'nonInteractiveUser')"; OSFilter = "startsWith(deviceDetail/operatingSystem,'Android')" }
+            'iOS' = @{ AppId = $AppId_iOS; EventType = "signInEventTypes/any(t: t eq 'nonInteractiveUser')"; OSFilter = "startsWith(deviceDetail/operatingSystem,'iOS')" }
+            'macOS' = @{ AppId = $AppId_macOS; EventType = "signInEventTypes/any(t: t eq 'nonInteractiveUser')"; OSFilter = "startsWith(deviceDetail/operatingSystem,'MacOs')" }
+            'Windows' = @{ AppId = $AppId_Windows; EventType = "isInteractive eq true"; OSFilter = "startsWith(deviceDetail/operatingSystem,'Windows')" }
             'Windows Fallback' = @{ AppId = $AppId_Windows_Fallback; EventType = "signInEventTypes/any(t: t eq 'nonInteractiveUser')"; OSFilter = "startsWith(deviceDetail/operatingSystem,'Windows')" }
         }
         # Build OS query list to process one operating system at a time
@@ -1673,9 +1763,9 @@ try {
             if ($OsQueryConfigs.ContainsKey($OsName) -and -not $AddedOSes.Contains($OsName)) {
                 [hashtable]$Cfg = $OsQueryConfigs[$OsName]
                 [void]$OsQueries.Add([PSCustomObject]@{
-                        Name       = $OsName
-                        BaseFilter = "appId eq '$($Cfg.AppId)' and $GraphFilterString and $($Cfg.EventType) and $($Cfg.OSFilter)"
-                    })
+                    Name = $OsName
+                    BaseFilter = "appId eq '$($Cfg.AppId)' and $GraphFilterString and $($Cfg.EventType) and $($Cfg.OSFilter)"
+                })
                 [void]$AddedOSes.Add($OsName)
             }
         }
@@ -1713,8 +1803,7 @@ try {
                     if ($QuickCheck) {
                         if ($QuickCheck -is [System.Collections.ICollection] -and $QuickCheck.Count -gt 0) {
                             $HasResults = $true
-                        }
-                        elseif ($QuickCheck -is [PSCustomObject]) {
+                        } elseif ($QuickCheck -is [PSCustomObject]) {
                             $HasResults = $true
                         }
                     }
@@ -1734,10 +1823,10 @@ try {
                     while ($CurrentStart -lt $EndTime) {
                         [datetime]$CurrentEnd = if ($CurrentStart.AddDays($ChunkDays) -gt $EndTime) { $EndTime } else { $CurrentStart.AddDays($ChunkDays) }
                         [void]$TimeChunks.Add([PSCustomObject]@{
-                                id        = "$($OsQuery.Name)_$($CurrentStart.ToString('yyyyMMdd'))_$($CurrentEnd.ToString('yyyyMMdd'))"
-                                StartTime = $CurrentStart
-                                EndTime   = $CurrentEnd
-                            })
+                            id = "$($OsQuery.Name)_$($CurrentStart.ToString('yyyyMMdd'))_$($CurrentEnd.ToString('yyyyMMdd'))"
+                            StartTime = $CurrentStart
+                            EndTime = $CurrentEnd
+                        })
                         $CurrentStart = $CurrentEnd
                     }
                     Write-Verbose "Created $($TimeChunks.Count) time chunks for $($OsQuery.Name)"
@@ -1775,21 +1864,31 @@ try {
                         [array]$FilteredLogs = if ($ReplaceUserAccounts -and $ReplaceUserAccounts.Count -gt 0) {
                             [int]$PreCount = $ChunkResults.Count
                             [array]$Filtered = @($ChunkResults | Where-Object {
-                                    [string]$Upn = $_.userPrincipalName
-                                    [bool]$ShouldExclude = $false
-                                    foreach ($pattern in $ReplaceUserAccounts) {
-                                        if ($Upn -like $pattern) {
-                                            $ShouldExclude = $true
-                                            break
-                                        }
+                                [string]$Upn = $_.userPrincipalName
+                                [bool]$ShouldExclude = $false
+                                foreach ($pattern in $ReplaceUserAccounts) {
+                                    if ($Upn -like $pattern) {
+                                        $ShouldExclude = $true
+                                        break
                                     }
-                                    -not $ShouldExclude
-                                })
+                                }
+                                -not $ShouldExclude
+                            })
                             Write-Verbose "Pre-filtered replace accounts for $($OsQuery.Name): $PreCount → $($Filtered.Count)"
                             $Filtered
                         } 
-                        else { $ChunkResults }
+                        else {$ChunkResults}
                         
+                        # Filtering UPNs using regular expressions
+                        $FilteredLogs = if ($ValidUserUpnRegex) {
+                            [int]$PreCount = $FilteredLogs.Count
+                            [array]$RegexFiltered = @($FilteredLogs | Where-Object {
+                                $_.userPrincipalName -match $ValidUserUpnRegex
+                            })
+                            Write-Verbose "Login records retained after user Regex filtering ($ValidUserUpnRegex): $($RegexFiltered.Count)/${PreCount}"
+                            $RegexFiltered
+                        } else { $FilteredLogs }
+
                         # Group sign-ins by device ID efficiently
                         foreach ($SignIn in $FilteredLogs) {
                             [string]$DeviceId = $SignIn.deviceDetail.deviceId
@@ -1834,8 +1933,7 @@ try {
         [string]$CurrentPrimaryUserUPN = if ($Device.userId -and $AllUsersByIdHash.TryGetValue($Device.userId, [ref]$CurrentPrimaryUser)) {
             Write-Verbose "Current primary user: $($CurrentPrimaryUser.userPrincipalName) for device $DeviceName"
             $CurrentPrimaryUser.userPrincipalName
-        }
-        else {
+        } else {
             Write-Warning "Current primary user for device $DeviceName is missing or invalid"
             "No.CurrentPrimaryUser"
         }
@@ -1926,8 +2024,7 @@ try {
                     & $AddReport -Target $DeviceName -OldValue $CurrentPrimaryUserUPN -NewValue $MostFrequentUserUPN -Action "Failed" -Details "$($_.Exception.Message)"
                     Write-Warning "Failed to set Primary User $MostFrequentUserUPN for device $DeviceName with error: $($_.Exception.Message)"
                 }
-            }
-            else {
+            } else {
                 & $AddReport -Target $DeviceName -OldValue $CurrentPrimaryUserUPN -NewValue $MostFrequentUserUPN -Action "WhatIf" -Details "Would set primary User $MostFrequentUserUPN"
                 Write-Verbose "WhatIf: Would set Primary User $MostFrequentUserUPN for device $DeviceName"
             }
@@ -1941,28 +2038,25 @@ try {
 catch {
     Write-Error "Script execution failed: $($_.Exception.Message)"
 }
-finally {
-    #End Script and restore preferences
+finally { #End Script and restore preferences
     # Disconnect from Graph
     try {
         Disconnect-MgGraph -ErrorAction Stop *>$null
         Write-Verbose "Disconnected from Graph"
     } 
-    catch { Write-Warning "Failed to disconnect from Graph: $($_.Exception.Message)" }
+    catch {Write-Warning "Failed to disconnect from Graph: $($_.Exception.Message)"}
     # Restore original preference settings to user's console
-    $ErrorActionPreference = $script:OriginalErrorActionPreference
-    $VerbosePreference = $script:OriginalVerbosePreference
-    $WhatIfPreference = $script:OriginalWhatIfPreference
+    $ErrorActionPreference  = $script:OriginalErrorActionPreference
+    $VerbosePreference      = $script:OriginalVerbosePreference
+    $WhatIfPreference       = $script:OriginalWhatIfPreference
     # End T-Bone custom logging
     Invoke-TboneLog -LogMode Stop
     # Generate report if requested
     if ($ReportEnabled) {
         Invoke-ScriptReport -ReportTitle $ReportTitle -ReportResults $ReportResults -ReportStartTime $ReportStartTime -ReportDetailed $ReportDetailed -ReportToDisk $ReportToDisk -ReportToDiskPath $ReportToDiskPath
-    }
-    else { Write-Verbose "Report generation not requested" }
+    } else {Write-Verbose "Report generation not requested"}
     # End script and report memory usage 
     [double]$MemoryUsage = [Math]::Round(([System.GC]::GetTotalMemory($false) / 1MB), 2)
     Write-Verbose "Script finished. Memory usage: $MemoryUsage MB"
 }
 #endregion
-
