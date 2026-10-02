@@ -95,10 +95,34 @@ Connect-MgGraph -Scopes "User.Read.All", "AuditLog.Read.All", "Directory.Read.Al
 # Datum voor de bestandsnaam
 $datum = Get-Date -Format "yyyyMMdd"
 
-# Haal alle gebruikers op met de benodigde eigenschappen
-$users = @(
-    Get-MgUser -All -Property DisplayName, UserPrincipalName, MailNickname, JobTitle, AssignedLicenses, OnPremisesSyncEnabled, UserType, SignInActivity -ErrorAction Stop
+# SignInActivity vereist Entra ID P1/P2. De basisinventarisatie kan zonder.
+$userProperties = @(
+    'DisplayName', 'UserPrincipalName', 'MailNickname', 'JobTitle',
+    'AssignedLicenses', 'OnPremisesSyncEnabled', 'UserType'
 )
+$signInActivityAvailable = $true
+try {
+    $users = @(
+        Get-MgUser -All -Property ($userProperties + 'SignInActivity') -ErrorAction Stop
+    )
+}
+catch {
+    $graphError = @($_.Exception.Message, $_.ErrorDetails.Message, $_.FullyQualifiedErrorId) -join ' '
+    if ($graphError -notmatch '\bAuthentication_RequestFromNonPremiumTenantOrB2CTenant\b') {
+        throw
+    }
+
+    $signInActivityAvailable = $false
+    if ($ReportType -eq 'InactiveGuests') {
+        throw 'Het rapport met inactieve gasten vereist aanmeldgegevens (SignInActivity), waarvoor deze tenant geen Entra ID P1/P2-licentie heeft. Gebruik -ReportType AllUsers voor een basisinventarisatie.'
+    }
+
+    Write-Warning 'Aanmeldgegevens zijn niet beschikbaar zonder Entra ID P1/P2. De gebruikers worden zonder aanmeldgegevens geëxporteerd.'
+    # Begin opnieuw: een mislukte gepagineerde aanvraag kan al gebruikers hebben opgeleverd.
+    $users = @(
+        Get-MgUser -All -Property $userProperties -ErrorAction Stop
+    )
+}
 if ($users.Count -eq 0) {
     throw 'Er zijn geen gebruikers gevonden. Er wordt geen CSV-bestand aangemaakt.'
 }
@@ -114,7 +138,10 @@ if ($ReportType -in @('AllUsers', 'Both')) {
 
         $hasLicense = if ($user.AssignedLicenses.Count -gt 0) { 'Ja' } else { 'Nee' }
         $adSynced = if ($user.OnPremisesSyncEnabled -eq $true) { 'Ja' } else { 'Nee' }
-        $lastSignIn = if ($user.SignInActivity.LastSignInDateTime) {
+        $lastSignIn = if (-not $signInActivityAvailable) {
+            'Niet beschikbaar (Entra ID P1/P2 vereist)'
+        }
+        elseif ($user.SignInActivity.LastSignInDateTime) {
             $user.SignInActivity.LastSignInDateTime
         }
         else {
@@ -139,6 +166,11 @@ if ($ReportType -in @('AllUsers', 'Both')) {
 }
 
 if ($ReportType -in @('InactiveGuests', 'Both')) {
+    if (-not $signInActivityAvailable) {
+        Write-Warning 'Rapport met inactieve gasten overgeslagen: zonder aanmeldgegevens kan inactiviteit niet worden vastgesteld. Een eventueel eerder rapport blijft ongewijzigd.'
+        return
+    }
+
     $DateThreshold = (Get-Date).AddMonths(-$InactiveMonths)
     $inactiveGuestUsers = @(
         $users | Where-Object {
