@@ -6,7 +6,7 @@ Windows PowerShell 5.1 en PowerShell 7, zonder extra modules of administratorrec
 ## Starten
 
 ```powershell
-& 'C:\Repo\powershell\Persoonlijk\Get-DomainInfo.ps1' `
+& 'C:\Repo\powershell\Domain\Get-DomainInfo.ps1' `
     -DomainName 'bedrijf.nl' `
     -OutputDirectory 'C:\Temp\Domeinrapporten'
 ```
@@ -14,12 +14,22 @@ Windows PowerShell 5.1 en PowerShell 7, zonder extra modules of administratorrec
 Vervang `bedrijf.nl` door het geregistreerde hoofddomein. Geef geen URL of
 e-mailadres op. Internationale domeinnamen worden omgezet naar punycode.
 Zonder `-DomainName` vraagt PowerShell om de naam. Zonder `-OutputDirectory`
-wordt een map `DomainReports` in de huidige werkmap gebruikt.
+vraagt het script om de exportmap. Druk op Enter om `DomainReports` in de
+huidige werkmap te gebruiken. Voor automatisch gebruik geef je `-OutputDirectory` mee.
+
+Met `-OutputDirectory` kies je zelf de basismap voor de export. Een ontbrekende
+map wordt automatisch aangemaakt, inclusief bovenliggende mappen. Een relatief
+pad, zoals `.\Exports`, wordt bepaald vanuit de huidige werkmap. Iedere uitvoering
+maakt binnen de gekozen map een unieke submap voor de HTML-, JSON- en CSV-bestanden.
+Een pad dat naar een bestaand bestand verwijst geeft een foutmelding.
+Het script gebruikt hiervoor `..\Common\ExportPath.ps1` en de functie
+`Resolve-ExportDirectory`, net als de andere exportscripts. Bewaar de mapstructuur
+`powershell/Domain` en `powershell/Common` als je het script kopieert.
 
 Extra hostnamen of eigen DKIM-selectors:
 
 ```powershell
-& 'C:\Repo\powershell\Persoonlijk\Get-DomainInfo.ps1' `
+& 'C:\Repo\powershell\Domain\Get-DomainInfo.ps1' `
     -DomainName 'bedrijf.nl' `
     -DkimSelector selector1,selector2,google,mail2026 `
     -AdditionalHostnames vpn,portal,remote `

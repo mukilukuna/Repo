@@ -12,7 +12,10 @@ niet publiek opvraagbaar. Geef bij voorkeur het geregistreerde hoofddomein op.
 .PARAMETER DomainName
 Domeinnaam zonder protocol, pad of e-mailadres, bijvoorbeeld bedrijf.nl.
 .PARAMETER OutputDirectory
-Basismap voor rapporten. Standaard DomainReports in de huidige werkmap.
+Basismap voor rapporten; wordt aangemaakt als deze nog niet bestaat.
+Een relatief pad wordt vanuit de huidige werkmap bepaald. Iedere uitvoering
+maakt een unieke submap. Zonder deze parameter wordt om de map gevraagd;
+druk op Enter voor DomainReports in de huidige werkmap.
 .PARAMETER DkimSelector
 Te controleren DKIM-selectors; vervangt de standaardlijst.
 .PARAMETER AdditionalHostnames
@@ -20,7 +23,7 @@ Extra relatieve namen binnen het domein, bijvoorbeeld vpn of portal.eu.
 .PARAMETER TimeoutSec
 Timeout per HTTPS-verzoek. De totale looptijd hangt af van het aantal vragen.
 .EXAMPLE
-& 'C:\Repo\powershell\Persoonlijk\Get-DomainInfo.ps1' -DomainName 'bedrijf.nl' -OutputDirectory 'C:\Temp\Domeinrapporten'
+& 'C:\Repo\powershell\Domain\Get-DomainInfo.ps1' -DomainName 'bedrijf.nl' -OutputDirectory 'C:\Temp\Domeinrapporten'
 .EXAMPLE
 .\Get-DomainInfo.ps1 -DomainName 'bedrijf.nl' -DkimSelector selector1,selector2,mail2026 -AdditionalHostnames vpn,portal
 .LINK
@@ -33,7 +36,7 @@ param (
     [Parameter(Mandatory = $true, Position = 0)]
     [ValidateNotNullOrEmpty()]
     [string]$DomainName,
-    [string]$OutputDirectory = (Join-Path (Get-Location).Path 'DomainReports'),
+    [string]$OutputDirectory,
     [string[]]$DkimSelector = @('selector1', 'selector2', 'google', 'default', 's1', 's2', 'k1'),
     [string[]]$AdditionalHostnames = @(),
     [ValidateRange(3, 120)]
@@ -41,6 +44,8 @@ param (
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot '../Common/ExportPath.ps1')
+
 $idn = New-Object System.Globalization.IdnMapping
 try { $domain = $idn.GetAscii($DomainName.Trim().TrimEnd('.')).ToLowerInvariant() }
 catch { throw 'Ongeldige domeinnaam. Gebruik bijvoorbeeld bedrijf.nl.' }
@@ -56,6 +61,8 @@ foreach ($label in @($DkimSelector) + @($AdditionalHostnames)) {
 }
 
 $runName = '{0}_{1}_{2}' -f $domain, (Get-Date -Format 'yyyyMMdd_HHmmss'), ([guid]::NewGuid().ToString('N').Substring(0, 8))
+$OutputDirectory = Resolve-ExportDirectory -Path $OutputDirectory `
+    -DefaultPath (Join-Path (Get-Location).ProviderPath 'DomainReports') -Prompt 'Exportmap voor domeinrapporten'
 $reportDirectory = (New-Item -ItemType Directory -Path (Join-Path $OutputDirectory $runName)).FullName
 $queries = New-Object 'System.Collections.Generic.List[object]'
 $records = New-Object 'System.Collections.Generic.List[object]'
