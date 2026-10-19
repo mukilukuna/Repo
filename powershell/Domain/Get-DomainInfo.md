@@ -5,25 +5,59 @@ Windows PowerShell 5.1 en PowerShell 7, zonder extra modules of administratorrec
 
 ## Starten
 
+Snel alleen de nameservers in de terminal bekijken:
+
 ```powershell
 & 'C:\Repo\powershell\Domain\Get-DomainInfo.ps1' `
-    -DomainName 'bedrijf.nl' `
-    -OutputDirectory 'C:\Temp\Domeinrapporten'
+    -DomainName 'bedrijf.nl' -NameserversOnly
 ```
+
+Dit doet slechts één DNS-vraag (NS), zonder RDAP, andere DNS-controles of
+exportbestanden. De uitvoer toont het domein, de nameservers en de TTL.
+De nameservers komen uit de openbare resolvercache; dit is geen controle van
+de DNS-resolver die op jouw computer is ingesteld. Geef het hoofddomein op:
+een subdomein heeft vaak geen eigen NS-records.
 
 Vervang `bedrijf.nl` door het geregistreerde hoofddomein. Geef geen URL of
 e-mailadres op. Internationale domeinnamen worden omgezet naar punycode.
-Zonder `-DomainName` vraagt PowerShell om de naam. Zonder `-OutputDirectory`
-vraagt het script om de exportmap. Druk op Enter om `DomainReports` in de
-huidige werkmap te gebruiken. Voor automatisch gebruik geef je `-OutputDirectory` mee.
+Zonder `-DomainName` vraagt PowerShell om de naam.
 
-Met `-OutputDirectory` kies je zelf de basismap voor de export. Een ontbrekende
+## Terminal of ZIP kiezen
+
+```powershell
+.\Get-DomainInfo.ps1 -DomainName 'bedrijf.nl'
+```
+
+Het script vraagt om **T** (terminal, standaard bij Enter) of **Z** (ZIP).
+Bij deze volledige controle worden ook RDAP en de overige DNS-records opgehaald.
+Terminaluitvoer toont een samenvatting, de DNS-records en mislukte controles;
+er worden geen rapportbestanden aangemaakt en er wordt niet om een exportmap gevraagd.
+
+Je kunt de keuze ook direct meegeven, zonder uitvoervraag:
+
+```powershell
+# Volledige controle in de terminal
+.\Get-DomainInfo.ps1 -DomainName 'bedrijf.nl' -OutputMode Terminal
+
+# Volledig rapport als ZIP
+.\Get-DomainInfo.ps1 -DomainName 'bedrijf.nl' -OutputMode Zip -OutputDirectory 'C:\Temp\Domeinrapporten'
+
+# Alleen de nameservers als ZIP
+.\Get-DomainInfo.ps1 -DomainName 'bedrijf.nl' -NameserversOnly -OutputMode Zip -OutputDirectory 'C:\Temp\Domeinrapporten'
+```
+
+Met `-NameserversOnly` is de standaarduitvoer direct Terminal, zonder uitvoervraag.
+Wanneer je alleen `-OutputDirectory` meegeeft, wordt automatisch ZIP-uitvoer gekozen.
+Combineer `-OutputDirectory` niet met `-OutputMode Terminal`.
+
+Met `-OutputDirectory` kies je de map voor het ZIP-bestand. Zonder deze parameter
+vraagt ZIP-uitvoer om een exportmap; druk op Enter voor `DomainReports` in de
+huidige werkmap. Een ontbrekende
 map wordt automatisch aangemaakt, inclusief bovenliggende mappen. Een relatief
-pad, zoals `.\Exports`, wordt bepaald vanuit de huidige werkmap. Iedere uitvoering
-maakt binnen de gekozen map een unieke submap voor de HTML-, JSON- en CSV-bestanden.
+pad, zoals `.\Exports`, wordt bepaald vanuit de huidige werkmap.
 Een pad dat naar een bestaand bestand verwijst geeft een foutmelding.
 Het script gebruikt hiervoor `..\Common\ExportPath.ps1` en de functie
-`Resolve-ExportDirectory`, net als de andere exportscripts. Bewaar de mapstructuur
+`Resolve-ExportDirectory`, net als de andere exportscripts. Bewaar voor ZIP-uitvoer de mapstructuur
 `powershell/Domain` en `powershell/Common` als je het script kopieert.
 
 Extra hostnamen of eigen DKIM-selectors:
@@ -33,6 +67,7 @@ Extra hostnamen of eigen DKIM-selectors:
     -DomainName 'bedrijf.nl' `
     -DkimSelector selector1,selector2,google,mail2026 `
     -AdditionalHostnames vpn,portal,remote `
+    -OutputMode Zip `
     -OutputDirectory 'C:\Temp\Domeinrapporten'
 ```
 
@@ -43,7 +78,10 @@ De totale looptijd kan bij netwerkproblemen enkele minuten bedragen.
 
 ## Wat krijg je?
 
-Iedere uitvoering maakt een unieke submap met vier bestanden:
+ZIP-uitvoer maakt één bestand zoals `bedrijf.nl_20261019_120000_a1b2c3d4.zip` in
+de gekozen map. Het ZIP-bestand bevat de onderstaande vier bestanden. Pak het
+uit om het HTML-rapport te openen. Tijdelijke losse bestanden worden na afloop opgeruimd.
+In de terminal wordt het pad naar de ZIP getoond; het resultaatobject bevat dit als `Zip`.
 
 | Bestand | Inhoud |
 | --- | --- |
@@ -52,7 +90,7 @@ Iedere uitvoering maakt een unieke submap met vier bestanden:
 | DNS-records.csv | Gevonden records, puntkomma als scheidingsteken |
 | DNS-controles.csv | Iedere uitgevoerde DNS-vraag, inclusief fouten en ontbrekende antwoorden |
 
-Het rapport bevat:
+Het volledige rapport bevat:
 
 - Registrar, openbare RDAP-contacten (ook reseller/abuse indien gepubliceerd),
   registratiedatums, wijzigingsdatums, eventuele vervaldatum en domeinstatussen.
@@ -62,6 +100,10 @@ Het rapport bevat:
   ftp en opgegeven extra hostnamen.
 - SRV voor autodiscover, SIP, SIP federation, submission en IMAPS.
 - A/AAAA van maximaal 30 gevonden NS/MX-hostnamen; PTR van maximaal 40 gevonden IP-adressen.
+
+Met `-NameserversOnly` bevat de ZIP alleen de NS-resultaten en de bijbehorende
+DNS-controle. De overige DNS-vragen en RDAP worden niet uitgevoerd; in JSON staat
+`NameserversOnly` op `true` en `Registration` op `null`.
 
 ## Waar wordt het domein beheerd?
 
@@ -111,3 +153,13 @@ nacontrole [SIDN Whois](https://www.sidn.nl/whois) of
 - [Google Public DNS JSON API](https://developers.google.com/speed/public-dns/docs/doh/json)
 - [IANA RDAP-bootstrapregister](https://www.iana.org/assignments/rdap-dns)
 - [SIDN: uitleg Whois en onderscheid registrar/reseller](https://www.sidn.nl/nl-domeinnaam/uitleg-whois)
+
+## Tests
+
+```powershell
+.\tests\Test-Get-DomainInfo.ps1
+```
+
+Deze tests gebruiken gesimuleerde DNS/RDAP-antwoorden en controleren onder andere
+de enkele NS-opvraag, terminaluitvoer zonder bestanden, de uitvoerkeuze, de ZIP-inhoud,
+de exportlocatie via Common en het opruimen van tijdelijke bestanden. Geen netwerktoegang nodig.
