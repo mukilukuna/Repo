@@ -1,36 +1,55 @@
-<# Hiermee kun je geopende file handles op een Azure Files share ophalen #>
+$ErrorActionPreference = 'Stop'
 
-
-# Zorg dat foutmeldingen niet het script stoppen
-$ErrorActionPreference = "Stop"
-
-# Benodigde modules
-$requiredModules = @("Az.Accounts", "Az.Storage")
-
-foreach ($module in $requiredModules) {
-    if (-not (Get-Module -ListAvailable -Name $module)) {
-        Write-Host "Module $module wordt geïnstalleerd..."
-        Install-Module -Name $module -Force -Scope AllUsers
+# Benodigde modules - installatie voor alle gebruikers
+foreach ($Module in @('Az.Accounts', 'Az.Storage')) {
+    if (-not (Get-Module -ListAvailable -Name $Module)) {
+        Install-Module -Name $Module -Scope AllUsers -Force
     }
 }
 
-# Connect met Azure
-Write-Host "Log in met device code..."
-Connect-AzAccount -UseDeviceAuthentication
+Import-Module Az.Accounts
+Import-Module Az.Storage
 
-# Selecteer subscription
-$subscription = Get-AzSubscription | Out-GridView -Title "Selecteer een subscription" -PassThru
-Set-AzContext -SubscriptionId $subscription.Id
+# Aanmelden bij Azure
+if (-not (Get-AzContext)) {
+    Connect-AzAccount -UseDeviceAuthentication
+}
 
-# Selecteer storage account
-$storageAccount = Get-AzStorageAccount | Out-GridView -Title "Selecteer het storage account" -PassThru
+# Subscription selecteren
+$Subscription = Get-AzSubscription |
+    Out-GridView -Title 'Selecteer Storax subscription' -PassThru
 
-# Maak de context aan
-$ctx = $storageAccount.Context
+if (-not $Subscription) {
+    throw 'Geen subscription geselecteerd.'
+}
 
-# Geef de naam van de Azure Files share op
-$shareName = Read-Host "Voer de naam in van de Azure File Share (bijv. fslogix)"
+Set-AzContext -SubscriptionId $Subscription.Id | Out-Null
 
-# Haal geopende handles op
-Write-Host "Ophalen geopende file handles op share '$shareName'..."
-Get-AzStorageFileHandle -Context $ctx -ShareName $shareName | Format-Table Path, OpenTime, SessionId
+# Storageaccount
+$StorageAccount = Get-AzStorageAccount `
+    -ResourceGroupName 'STX-EUAZU-RSG-STOR' `
+    -Name 'stxeuazusto'
+
+$Ctx = $StorageAccount.Context
+
+# File share
+$ShareName = 'fslogix'
+
+Write-Host "`nOpen SMB-handles ophalen..." -ForegroundColor Cyan
+
+# Alle handles inclusief submappen
+$Handles = @(
+    Get-AzStorageFileHandle `
+        -Context $Ctx `
+        -ShareName $ShareName `
+        -Recursive
+)
+
+Write-Host "`nAantal gevonden handles: $($Handles.Count)" -ForegroundColor Green
+
+# Overzicht
+$Handles |
+    Select-Object Path, HandleId, ClientIp, ClientName,
+                  OpenTime, LastReconnectTime, SessionId |
+    Sort-Object Path, OpenTime |
+    Format-Table -AutoSize
